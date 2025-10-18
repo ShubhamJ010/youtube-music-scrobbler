@@ -2,23 +2,26 @@ name: YouTube Music Scrobble Sync
 
 on:
   schedule:
-    - cron: '0 23 * * *'  # Daily at 23:00 UTC (adjust as needed)
-  workflow_dispatch: # Allows manual triggering from GitHub UI
+    - cron: "0 23 * * *" # Daily at 23:00 UTC
+  workflow_dispatch: # Allows manual trigger from GitHub UI
 
 jobs:
   scrobble:
     runs-on: ubuntu-latest
-    environment: production # Binds to the 'production' environment for secrets and protection rules
-    
+    environment: production
+
+    outputs:
+      OUTPUT_LOG: ${{ steps.run_script.outputs.log }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11' # Or your preferred Python version (e.g., '3.8', '3.9', '3.10')
-          
+          python-version: "3.11"
+
       - name: Cache dependencies
         uses: actions/cache@v3
         with:
@@ -26,34 +29,12 @@ jobs:
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
+
       - name: Install dependencies
         run: pip install -r requirements.txt
-        
-  notify:
-    needs: scrobble
-    runs-on: ubuntu-latest
-    if: failure()
-    steps:
-      - name: Send Discord notification
-        run: |
-          curl -H "Content-Type: application/json" -d '{
-            "content": "YouTube Music Scrobble Sync failed!"
-          }' ${{ secrets.DISCORD_WEBHOOK_URL }}
-        env:
-  notify_success:
-    needs: scrobble
-    runs-on: ubuntu-latest
-    if: success()
-    steps:
-      - name: Send Discord notification
-        run: |
-          curl -H "Content-Type: application/json" -d '{
-            "content": "YouTube Music Scrobble Sync succeeded!\nLogs:\n${{ env.OUTPUT_LOG }}"
-          }' ${{ secrets.DISCORD_WEBHOOK_URL }}
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
       - name: Run YouTube Music Scrobbler
+        id: run_script
         env:
           LAST_FM_API: ${{ secrets.LAST_FM_API }}
           LAST_FM_API_SECRET: ${{ secrets.LAST_FM_API_SECRET }}
@@ -61,4 +42,39 @@ jobs:
           LASTFM_SESSION: ${{ secrets.LASTFM_SESSION }}
         run: |
           python start_standalone.py > output.log 2>&1
-          echo "OUTPUT_LOG=$(cat output.log)" >> $GITHUB_ENV
+
+          echo "---- LAST 100 LINES OF LOG ----"
+          tail -n 100 output.log
+
+          # Truncate to last 100 lines to avoid Discord 2K character limit
+          tail -n 100 output.log > trimmed.log
+
+          echo "log<<EOF" >> $GITHUB_OUTPUT
+          cat trimmed.log >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+  notify_failure:
+    needs: scrobble
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Send Discord notification (Failure)
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          content="❌ YouTube Music Scrobble Sync **failed!**\n\n\`\`\`\n${{ needs.scrobble.outputs.OUTPUT_LOG }}\n\`\`\`"
+          payload=$(jq -n --arg content "$content" '{content: $content}')
+          curl -H "Content-Type: application/json" -d "$payload" "$DISCORD_WEBHOOK_URL"
+
+  notify_success:
+    needs: scrobble
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Send Discord notification (Success)
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          content="✅ YouTube Music Scrobble Sync **succeeded!**\n\n\`\`\`\n${{ needs.scrobble.outputs.OUTPUT_LOG }}\n\`\`\`"
+          payload=$(jq -n --arg content "$content" '{content: $content}')
+          curl -H "Content-Type: application/json" -d "$payload" "$DISCORD_WEBHOOK_URL"
