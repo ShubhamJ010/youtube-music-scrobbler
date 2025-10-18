@@ -3,6 +3,8 @@ name: YouTube Music Scrobble Sync
 on:
   schedule:
     - cron: '0 23 * * *'  # Daily at 23:00 UTC (adjust as needed)
+  push:
+    branches: [main] # Trigger on push to main branch
   workflow_dispatch: # Allows manual triggering from GitHub UI
 
 jobs:
@@ -28,6 +30,17 @@ jobs:
             ${{ runner.os }}-pip-
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Run YouTube Music Scrobbler
+        env:
+          LAST_FM_API: ${{ secrets.LAST_FM_API }}
+          LAST_FM_API_SECRET: ${{ secrets.LAST_FM_API_SECRET }}
+          YTMUSIC_COOKIE: ${{ secrets.YTMUSIC_COOKIE }}
+          LASTFM_SESSION: ${{ secrets.LASTFM_SESSION }}
+        run: |
+          echo "Starting YouTube Music Scrobbler..."
+          python start_standalone.py
+          echo "YouTube Music Scrobbler finished."
         
   notify:
     needs: scrobble
@@ -41,10 +54,3 @@ jobs:
           }' ${{ secrets.DISCORD_WEBHOOK_URL }}
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      - name: Run YouTube Music Scrobbler
-        env:
-          LAST_FM_API: ${{ secrets.LAST_FM_API }}
-          LAST_FM_API_SECRET: ${{ secrets.LAST_FM_API_SECRET }}
-          YTMUSIC_COOKIE: ${{ secrets.YTMUSIC_COOKIE }}
-          LASTFM_SESSION: ${{ secrets.LASTFM_SESSION }}
-        run: python start_standalone.py
