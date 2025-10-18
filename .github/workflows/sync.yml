@@ -11,6 +11,8 @@ jobs:
   scrobble:
     runs-on: ubuntu-latest
     environment: production # Binds to the 'production' environment for secrets and protection rules
+    outputs:
+      scrobble_log: ${{ steps.scrobbler.outputs.scrobble_log }}
     
     steps:
       - name: Checkout code
@@ -38,6 +40,7 @@ jobs:
           key: ${{ runner.os }}-scrobble-db
 
       - name: Run YouTube Music Scrobbler
+        id: scrobbler
         env:
           LAST_FM_API: ${{ secrets.LAST_FM_API }}
           LAST_FM_API_SECRET: ${{ secrets.LAST_FM_API_SECRET }}
@@ -45,7 +48,11 @@ jobs:
           LASTFM_SESSION: ${{ secrets.LASTFM_SESSION }}
         run: |
           echo "Starting YouTube Music Scrobbler..."
-          python start_standalone.py
+          output=$(python start_standalone.py)
+          echo "$output"
+          echo "scrobble_log<<EOF" >> $GITHUB_OUTPUT
+          echo "$output" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
           echo "YouTube Music Scrobbler finished."
         
   notify:
@@ -60,3 +67,46 @@ jobs:
           }' "$DISCORD_WEBHOOK_URL"
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+  notify_success:
+    needs: scrobble
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Send Discord notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SCROBBLE_LOG: ${{ needs.scrobble.outputs.scrobble_log }}
+        run: |
+          pip install requests
+          python -c '
+import os
+import requests
+
+log = os.environ.get("SCROBBLE_LOG", "")
+webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
+
+if not webhook_url:
+    print("DISCORD_WEBHOOK_URL not set. Skipping notification.")
+    exit(0)
+
+# Discord has a 2000 character limit for embed descriptions.
+if len(log) > 1980:
+    log = log[:1980] + "\n... (log truncated)"
+
+payload = {
+    "content": "YouTube Music Scrobble Sync succeeded!",
+    "embeds": [{
+        "title": "Scrobble Log",
+        "description": f"```\n{log}\n```"
+    }]
+}
+
+try:
+    response = requests.post(webhook_url, json=payload)
+    response.raise_for_status()
+    print("Successfully sent Discord notification.")
+except requests.exceptions.RequestException as e:
+    print(f"Failed to send Discord notification: {e}")
+    exit(1)
+'
