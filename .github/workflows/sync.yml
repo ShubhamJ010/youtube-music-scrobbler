@@ -31,6 +31,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Cache scrobble database
+        uses: actions/cache@v3
+        with:
+          path: data.db
+          key: ${{ runner.os }}-scrobble-db
+
       - name: Run YouTube Music Scrobbler
         env:
           LAST_FM_API: ${{ secrets.LAST_FM_API }}
