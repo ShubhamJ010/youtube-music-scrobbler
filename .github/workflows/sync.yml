@@ -59,6 +59,7 @@ jobs:
     needs: scrobble
     runs-on: ubuntu-latest
     if: failure()
+    environment: production
     steps:
       - name: Send Discord notification
         run: |
@@ -72,6 +73,7 @@ jobs:
     needs: scrobble
     runs-on: ubuntu-latest
     if: success()
+    environment: production
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
