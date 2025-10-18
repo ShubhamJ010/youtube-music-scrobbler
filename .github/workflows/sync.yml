@@ -13,6 +13,7 @@ jobs:
     environment: production # Binds to the 'production' environment for secrets and protection rules
     outputs:
       scrobble_log: ${{ steps.scrobbler.outputs.scrobble_log }}
+      notification_data: ${{ steps.scrobbler.outputs.notification_data }}
     
     steps:
       - name: Checkout code
@@ -50,9 +51,18 @@ jobs:
           echo "Starting YouTube Music Scrobbler..."
           output=$(python start_standalone.py)
           echo "$output"
+          
+          log_output=$(echo "$output" | sed 's/--- NOTIFICATION_DATA_START ---/--- NOTIFICATION_DATA_END ---/g' | sed -n '1,/--- NOTIFICATION_DATA_END ---/p' | sed 's/--- NOTIFICATION_DATA_END ---//g')
+          json_output=$(echo "$output" | awk '/--- NOTIFICATION_DATA_START ---/{f=1;next} /--- NOTIFICATION_DATA_END ---/{f=0} f')
+
           echo "scrobble_log<<EOF" >> $GITHUB_OUTPUT
-          echo "$output" >> $GITHUB_OUTPUT
+          echo "$log_output" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "notification_data<<EOF" >> $GITHUB_OUTPUT
+          echo "$json_output" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
           echo "YouTube Music Scrobbler finished."
         
   notify:
@@ -80,7 +90,7 @@ jobs:
       - name: Send Discord notification
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          SCROBBLE_LOG: ${{ needs.scrobble.outputs.scrobble_log }}
+          NOTIFICATION_DATA: ${{ needs.scrobble.outputs.notification_data }}
         run: |
           pip install requests
           python .github/scripts/send_success_notification.py
