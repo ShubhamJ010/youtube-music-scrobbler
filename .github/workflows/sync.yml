@@ -2,16 +2,13 @@ name: YouTube Music Scrobble Sync
 
 on:
   schedule:
-    - cron: "0 23 * * *" # Daily at 23:00 UTC
-  workflow_dispatch: # Allows manual trigger from GitHub UI
+    - cron: '0 23 * * *'  # Daily at 23:00 UTC (adjust as needed)
+  workflow_dispatch: # Allows manual triggering from GitHub UI
 
 jobs:
   scrobble:
     runs-on: ubuntu-latest
     environment: production
-
-    outputs:
-      OUTPUT_LOG: ${{ steps.run_script.outputs.log }}
 
     steps:
       - name: Checkout code
@@ -20,7 +17,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Cache dependencies
         uses: actions/cache@v3
@@ -34,47 +31,27 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run YouTube Music Scrobbler
-        id: run_script
         env:
           LAST_FM_API: ${{ secrets.LAST_FM_API }}
           LAST_FM_API_SECRET: ${{ secrets.LAST_FM_API_SECRET }}
           YTMUSIC_COOKIE: ${{ secrets.YTMUSIC_COOKIE }}
           LASTFM_SESSION: ${{ secrets.LASTFM_SESSION }}
         run: |
+          set -e
           python start_standalone.py > output.log 2>&1
 
-          echo "---- LAST 100 LINES OF LOG ----"
-          tail -n 100 output.log
-
-          # Truncate to last 100 lines to avoid Discord 2K character limit
-          tail -n 100 output.log > trimmed.log
-
-          echo "log<<EOF" >> $GITHUB_OUTPUT
-          cat trimmed.log >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-  notify_failure:
-    needs: scrobble
-    runs-on: ubuntu-latest
-    if: failure()
-    steps:
-      - name: Send Discord notification (Failure)
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      - name: Send success notification
+        if: success()
         run: |
-          content="❌ YouTube Music Scrobble Sync **failed!**\n\n\`\`\`\n${{ needs.scrobble.outputs.OUTPUT_LOG }}\n\`\`\`"
-          payload=$(jq -n --arg content "$content" '{content: $content}')
-          curl -H "Content-Type: application/json" -d "$payload" "$DISCORD_WEBHOOK_URL"
+          curl -H "Content-Type: application/json" \
+               -d "{\"content\": \"✅ YouTube Music Scrobble Sync **completed successfully!**\"}" \
+               ${{ secrets.DISCORD_WEBHOOK_URL }}
 
-  notify_success:
-    needs: scrobble
-    runs-on: ubuntu-latest
-    if: success()
-    steps:
-      - name: Send Discord notification (Success)
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      - name: Send failure notification
+        if: failure()
         run: |
-          content="✅ YouTube Music Scrobble Sync **succeeded!**\n\n\`\`\`\n${{ needs.scrobble.outputs.OUTPUT_LOG }}\n\`\`\`"
-          payload=$(jq -n --arg content "$content" '{content: $content}')
-          curl -H "Content-Type: application/json" -d "$payload" "$DISCORD_WEBHOOK_URL"
+          echo "Workflow failed, sending Discord alert..."
+          LOG_OUTPUT=$(tail -n 20 output.log | sed 's/"/\\"/g')
+          curl -H "Content-Type: application/json" \
+               -d "{\"content\": \"❌ YouTube Music Scrobble Sync **failed!**\n\n\`\`\`\n${LOG_OUTPUT}\n\`\`\`\"}" \
+               ${{ secrets.DISCORD_WEBHOOK_URL }}
