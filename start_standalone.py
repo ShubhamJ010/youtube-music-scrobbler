@@ -273,8 +273,9 @@ class ImprovedProcess:
                 self.conn.commit()
 
         # Determine which songs to scrobble using smart position tracking
+        max_first_time_songs = 10  # Can be made configurable
         songs_to_process = self.position_tracker.detect_songs_to_scrobble(
-            today_songs, database_songs
+            today_songs, database_songs, is_first_time, max_first_time_songs
         )
 
         # Count how many will actually be scrobbled
@@ -283,7 +284,8 @@ class ImprovedProcess:
 
         print(f"Processing {len(songs_to_process)} songs ({total_to_scrobble} will be scrobbled)")
         
-
+        if is_first_time and total_to_scrobble > 0:
+            print(f"First-time user: Limiting scrobbles to {min(total_to_scrobble, max_first_time_songs)} most recent songs")
 
         songs_scrobbled = 0
         scrobble_position = 0
@@ -359,7 +361,8 @@ class ImprovedProcess:
         print(f"  - Songs successfully scrobbled: {songs_scrobbled}")
         print(f"  - Songs processed (DB updated): {len(songs_to_process)}")
         
-
+        if is_first_time:
+            print(f"  - First-time user: Limited to {max_first_time_songs} scrobbles")
         
         return True
 

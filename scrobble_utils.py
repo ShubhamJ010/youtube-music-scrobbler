@@ -288,7 +288,9 @@ class PositionTracker:
     @staticmethod
     def detect_songs_to_scrobble(
         today_songs: List[Dict[str, str]],
-        database_songs: List[Dict]
+        database_songs: List[Dict],
+        is_first_time: bool = False,
+        max_first_time_songs: int = 10
     ) -> List[Dict]:
         """
         Determine which songs should be scrobbled based on position tracking
@@ -296,49 +298,70 @@ class PositionTracker:
         Args:
             today_songs: Songs from today's history (with position index)
             database_songs: Songs already in database with max_array_position
+            is_first_time: Whether this is first time scrobbling for user
+            max_first_time_songs: Maximum songs to scrobble for first-time users
             
         Returns:
             List of songs that should be scrobbled with their info
         """
         songs_to_scrobble = []
         
-        # Regular processing: check for new songs and re-reproductions
-        for i, song in enumerate(today_songs):
-            current_position = i + 1
-            
-            # Find matching song in database
-            saved_song = None
-            for db_song in database_songs:
-                if (db_song['title'] == song['title'] and 
-                    db_song['artist'] == song['artist'] and 
-                    db_song['album'] == song['album']):
-                    saved_song = db_song
-                    break
-            
-            if not saved_song:
-                # New song - scrobble it
+        if is_first_time:
+            # First time: scrobble recent songs up to the limit
+            for i, song in enumerate(today_songs[:max_first_time_songs]):
                 songs_to_scrobble.append({
                     'song': song,
-                    'position': current_position,
-                    'reason': 'new_song',
+                    'position': i + 1,
+                    'reason': 'first_time',
                     'should_scrobble': True
                 })
-            elif current_position < saved_song.get('array_position', float('inf')):
-                # Re-reproduction - song moved up in the list (better position than previous session)
+            
+            # Add remaining songs to database without scrobbling
+            for i, song in enumerate(today_songs[max_first_time_songs:], max_first_time_songs):
                 songs_to_scrobble.append({
                     'song': song,
-                    'position': current_position,
-                    'reason': 'reproduction',
-                    'should_scrobble': True,
-                    'previous_position': saved_song.get('array_position')
-                })
-            else:
-                # Song exists and hasn't moved up - just update position
-                songs_to_scrobble.append({
-                    'song': song,
-                    'position': current_position,
-                    'reason': 'position_update',
+                    'position': i + 1,
+                    'reason': 'first_time_no_scrobble',
                     'should_scrobble': False
                 })
-    
+        else:
+            # Regular processing: check for new songs and re-reproductions
+            for i, song in enumerate(today_songs):
+                current_position = i + 1
+                
+                # Find matching song in database
+                saved_song = None
+                for db_song in database_songs:
+                    if (db_song['title'] == song['title'] and 
+                        db_song['artist'] == song['artist'] and 
+                        db_song['album'] == song['album']):
+                        saved_song = db_song
+                        break
+                
+                if not saved_song:
+                    # New song - scrobble it
+                    songs_to_scrobble.append({
+                        'song': song,
+                        'position': current_position,
+                        'reason': 'new_song',
+                        'should_scrobble': True
+                    })
+                elif current_position < saved_song.get('array_position', float('inf')):
+                    # Re-reproduction - song moved up in the list (better position than previous session)
+                    songs_to_scrobble.append({
+                        'song': song,
+                        'position': current_position,
+                        'reason': 'reproduction',
+                        'should_scrobble': True,
+                        'previous_position': saved_song.get('array_position')
+                    })
+                else:
+                    # Song exists and hasn't moved up - just update position
+                    songs_to_scrobble.append({
+                        'song': song,
+                        'position': current_position,
+                        'reason': 'position_update',
+                        'should_scrobble': False
+                    })
+        
         return songs_to_scrobble
