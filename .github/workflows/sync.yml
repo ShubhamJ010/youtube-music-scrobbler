@@ -73,6 +73,8 @@ jobs:
     runs-on: ubuntu-latest
     if: success()
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
       - name: Send Discord notification
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
