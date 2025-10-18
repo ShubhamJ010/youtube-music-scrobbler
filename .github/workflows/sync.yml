@@ -79,7 +79,7 @@ jobs:
           SCROBBLE_LOG: ${{ needs.scrobble.outputs.scrobble_log }}
         run: |
           pip install requests
-          python -c '
+          python - <<EOF
 import os
 import requests
 
@@ -109,4 +109,4 @@ try:
 except requests.exceptions.RequestException as e:
     print(f"Failed to send Discord notification: {e}")
     exit(1)
-'
+EOF
