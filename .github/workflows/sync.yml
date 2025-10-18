@@ -80,5 +80,5 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           SCROBBLE_LOG: ${{ needs.scrobble.outputs.scrobble_log }}
         run: |
-          chmod +x .github/scripts/send_success_notification.sh
-          .github/scripts/send_success_notification.sh
+          pip install requests
+          python .github/scripts/send_success_notification.py
