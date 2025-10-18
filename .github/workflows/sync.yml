@@ -78,35 +78,11 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           SCROBBLE_LOG: ${{ needs.scrobble.outputs.scrobble_log }}
         run: |
-          pip install requests
-          python - <<EOF
-import os
-import requests
-
-log = os.environ.get("SCROBBLE_LOG", "")
-webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
-
-if not webhook_url:
-    print("DISCORD_WEBHOOK_URL not set. Skipping notification.")
-    exit(0)
-
-# Discord has a 2000 character limit for embed descriptions.
-if len(log) > 1980:
-    log = log[:1980] + "\n... (log truncated)"
-
-payload = {
-    "content": "YouTube Music Scrobble Sync succeeded!",
-    "embeds": [{
-        "title": "Scrobble Log",
-        "description": f"```\n{log}\n```"
-    }]
-}
-
-try:
-    response = requests.post(webhook_url, json=payload)
-    response.raise_for_status()
-    print("Successfully sent Discord notification.")
-except requests.exceptions.RequestException as e:
-    print(f"Failed to send Discord notification: {e}")
-    exit(1)
-EOF
+          log_content="${SCROBBLE_LOG//\/\\}"
+          log_content="${log_content//\"/\\\"}"
+          log_content="${log_content//$'\n'/\\n}"
+          if [ ${#log_content} -gt 1980 ]; then
+            log_content="$(echo "$log_content" | cut -c 1-1980)... (log truncated)"
+          fi
+          json_payload=$(printf '{"content": "YouTube Music Scrobble Sync succeeded!", "embeds": [{"title": "Scrobble Log", "description": "```\n%s\n```"}]}' "$log_content")
+          curl -H "Content-Type: application/json" -d "$json_payload" "$DISCORD_WEBHOOK_URL"
