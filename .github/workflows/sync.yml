@@ -40,6 +40,18 @@ jobs:
             "content": "YouTube Music Scrobble Sync failed!"
           }' ${{ secrets.DISCORD_WEBHOOK_URL }}
         env:
+  notify_success:
+    needs: scrobble
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Send Discord notification
+        run: |
+          curl -H "Content-Type: application/json" -d '{
+            "content": "YouTube Music Scrobble Sync succeeded!\nLogs:\n${{ env.OUTPUT_LOG }}"
+          }' ${{ secrets.DISCORD_WEBHOOK_URL }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       - name: Run YouTube Music Scrobbler
         env:
@@ -47,4 +59,6 @@ jobs:
           LAST_FM_API_SECRET: ${{ secrets.LAST_FM_API_SECRET }}
           YTMUSIC_COOKIE: ${{ secrets.YTMUSIC_COOKIE }}
           LASTFM_SESSION: ${{ secrets.LASTFM_SESSION }}
-        run: python start_standalone.py
+        run: |
+          python start_standalone.py > output.log 2>&1
+          echo "OUTPUT_LOG=$(cat output.log)" >> $GITHUB_ENV
