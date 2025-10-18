@@ -19,7 +19,6 @@ import xml.etree.ElementTree as ET
 from dotenv import load_dotenv, set_key
 from datetime import datetime
 from typing import List, Dict, Optional
-from collections import Counter
 
 # Import our new modules
 from ytmusic_fetcher import get_ytmusic_history_from_cookie
@@ -51,18 +50,6 @@ class TokenServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 
 class ImprovedProcess:
-    @staticmethod
-    def duration_to_seconds(duration_str: str) -> int:
-        if not duration_str:
-            return 0
-        parts = duration_str.split(':')
-        seconds = 0
-        if len(parts) == 2:
-            seconds = int(parts[0]) * 60 + int(parts[1])
-        elif len(parts) == 3:
-            seconds = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-        return seconds
-
     def __init__(self):
         self.api_key = os.environ.get('LAST_FM_API')
         self.api_secret = os.environ.get('LAST_FM_API_SECRET')
@@ -367,53 +354,8 @@ class ImprovedProcess:
                     break
 
         cursor.close()
-
-        # Calculate metrics for notification
-        total_listening_time_seconds = 0
-        for song in today_songs:
-            total_listening_time_seconds += self.duration_to_seconds(song.get('duration'))
         
-        total_listening_time_str = time.strftime('%H:%M:%S', time.gmtime(total_listening_time_seconds))
-
-        scrobbled_songs_details = []
-        for item in songs_to_scrobble:
-            song = item['song']
-            scrobbled_songs_details.append({
-                'title': song['title'],
-                'artist': song['artist'],
-                'album': song['album'],
-                'duration': song.get('duration'),
-                'playedAt': song.get('playedAt')
-            })
-
-        top_artist = None
-        if scrobbled_songs_details:
-            artists = [s['artist'] for s in scrobbled_songs_details]
-            if artists:
-                top_artist = Counter(artists).most_common(1)[0][0]
-
-        top_album = None
-        if scrobbled_songs_details:
-            albums = [s['album'] for s in scrobbled_songs_details]
-            if albums:
-                top_album = Counter(albums).most_common(1)[0][0]
-
-        # Prepare data for notification script
-        notification_data = {
-            "total_songs_scrobbled": songs_scrobbled,
-            "total_listening_time": total_listening_time_str,
-            "top_artist": top_artist,
-            "top_album": top_album,
-            "scrobbled_songs": scrobbled_songs_details
-        }
-
-        # Print notification data as JSON
-        import json
-        print("--- NOTIFICATION_DATA_START ---")
-        print(json.dumps(notification_data))
-        print("--- NOTIFICATION_DATA_END ---")
-        
-        print(f"\n✅ Scrobbling completed!")
+        print(f"\\n✅ Scrobbling completed!")
         print(f"📊 Summary:")
         print(f"  - Total songs in today's history: {len(today_songs)}")
         print(f"  - Songs successfully scrobbled: {songs_scrobbled}")

@@ -355,15 +355,19 @@ class YTMusicFetcher:
                         if music_config.get("pageType") == "MUSIC_PAGE_TYPE_ALBUM":
                             album = runs[0].get("text")
                             break
-
-                # Find duration
-                duration = None
-                for column in flex_columns:
-                    column_renderer = column.get("musicResponsiveListItemFlexColumnRenderer", {})
-                    runs = column_renderer.get("text", {}).get("runs", [])
-                    if runs and 'navigationEndpoint' not in runs[0]:
-                        text = runs[0].get("text")
-                        if text and re.match(r'^\d{1,2}:\d{2}
+                
+                # Use title as album if no album found
+                if not album:
+                    album = title
+                
+                # Skip songs without required data or Topic channels
+                if title and artist and not artist.endswith(" - Topic"):
+                    songs.append({
+                        "title": self._sanitize_string(title),
+                        "artist": self._sanitize_string(artist),
+                        "album": self._sanitize_string(album),
+                        "playedAt": played_at
+                    })
         
         return songs
     
