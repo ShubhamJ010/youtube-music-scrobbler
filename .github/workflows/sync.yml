@@ -37,7 +37,10 @@ jobs:
         uses: actions/cache@v3
         with:
           path: data.db
-          key: ${{ runner.os }}-scrobble-db
+          key: ${{ runner.os }}-scrobble-db-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ runner.os }}-scrobble-db-${{ github.run_id }}-
+            ${{ runner.os }}-scrobble-db-
 
       - name: Run YouTube Music Scrobbler
         id: scrobbler
@@ -54,6 +57,11 @@ jobs:
           echo "$output" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           echo "YouTube Music Scrobbler finished."
+          
+      - name: Analyze database for duplicates
+        run: |
+          echo "Analyzing database for duplicate records..."
+          python debug_duplicates.py
         
   notify:
     needs: scrobble

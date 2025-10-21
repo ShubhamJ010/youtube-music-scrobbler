@@ -228,10 +228,13 @@ class ImprovedProcess:
         # Get existing songs from database
         cursor = self.conn.cursor()
         db_songs = cursor.execute('''
-            SELECT track_name, artist_name, album_name, array_position, 
+            SELECT track_name, artist_name, album_name, array_position,
                    max_array_position, is_first_time_scrobble
             FROM scrobbles
         ''').fetchall()
+        
+        print(f"📊 Database Analysis:")
+        print(f"  - Total existing songs in database: {len(db_songs)}")
         
         # Convert to dict format for easier processing
         database_songs = []
@@ -244,6 +247,12 @@ class ImprovedProcess:
                 'max_array_position': row[4] or row[3],  # Use array_position if max is NULL
                 'is_first_time': bool(row[5])
             })
+        
+        # Show recent database entries for debugging
+        if database_songs:
+            print(f"  - Recent database entries:")
+            for song in database_songs[:5]:
+                print(f"    - {song['title']} by {song['artist']} (pos: {song.get('array_position', 'N/A')}, max: {song.get('max_array_position', 'N/A')})")
 
         # Determine if this is first time scrobbling
         is_first_time = len(database_songs) == 0
@@ -282,7 +291,21 @@ class ImprovedProcess:
         songs_to_scrobble = [s for s in songs_to_process if s['should_scrobble']]
         total_to_scrobble = len(songs_to_scrobble)
 
-        print(f"Processing {len(songs_to_process)} songs ({total_to_scrobble} will be scrobbled)")
+        print(f"🎵 Processing Analysis:")
+        print(f"  - Total songs to process: {len(songs_to_process)}")
+        print(f"  - Songs to scrobble: {total_to_scrobble}")
+        print(f"  - Songs for database only: {len(songs_to_process) - total_to_scrobble}")
+        
+        # Log processing decisions for debugging
+        for item in songs_to_process[:10]:  # Show first 10 for brevity
+            song = item['song']
+            should_scrobble = item['should_scrobble']
+            reason = item['reason']
+            action = "SCROBBLE" if should_scrobble else "DB-ONLY"
+            print(f"    - {action}: {song['title']} by {song['artist']} ({reason})")
+        
+        if len(songs_to_process) > 10:
+            print(f"    ... and {len(songs_to_process) - 10} more songs")
         
         if is_first_time and total_to_scrobble > 0:
             print(f"First-time user: Limiting scrobbles to {min(total_to_scrobble, max_first_time_songs)} most recent songs")
@@ -353,6 +376,24 @@ class ImprovedProcess:
                     print("Authentication error detected. Stopping execution.")
                     break
 
+        # Check for potential duplicates in the database
+        print(f"\\n🔍 Duplicate Detection:")
+        cursor.execute('''
+            SELECT track_name, artist_name, COUNT(*) as count
+            FROM scrobbles
+            WHERE scrobbled_at >= datetime('now', '-1 hour')
+            GROUP BY track_name, artist_name
+            HAVING count > 1
+        ''')
+        
+        duplicates = cursor.fetchall()
+        if duplicates:
+            print(f"  ⚠️  Potential duplicates found in last hour:")
+            for song, count in duplicates:
+                print(f"    - {song} (appears {count} times)")
+        else:
+            print(f"  ✅ No duplicates found in last hour")
+        
         cursor.close()
         
         print(f"\\n✅ Scrobbling completed!")
