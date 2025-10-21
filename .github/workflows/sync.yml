@@ -61,8 +61,8 @@ jobs:
       - name: Analyze database for duplicates
         run: |
           echo "Analyzing database for duplicate records..."
-          python debug_duplicates.py
-        
+          echo "debug_duplicates.py has been removed"
+         
   notify:
     needs: scrobble
     runs-on: ubuntu-latest
