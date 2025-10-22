@@ -189,43 +189,43 @@ class ImprovedProcess:
                 return False
 
         # Validate the YouTube Music cookie is still valid before proceeding
-        print("Validating YouTube Music cookie...")
+        print("🔍 Validating YouTube Music cookie...")
         try:
             fetcher = YTMusicFetcher(cookie)
             is_valid = fetcher.validate_cookie_is_active()
             if not is_valid:
                 raise Exception("YouTube Music cookie validation failed - cookie appears to be invalid")
-            print("YouTube Music cookie is valid")
+            print("✅ Cookie validation passed")
         except Exception as error:
             return self._handle_auth_error(error, "validating cookie")
 
+        print("🎵 Fetching YouTube Music history...")
         try:
-            print("Fetching YouTube Music history...")
             # Use our new HTML-based history fetcher (no YTMusic API dependency)
             history = get_ytmusic_history_from_cookie(cookie)
-            print(f"Retrieved {len(history)} songs from history")
+            print(f"📋 Retrieved {len(history)} total songs from history")
         except Exception as error:
             return self._handle_auth_error(error, "fetching history")
 
         # Filter songs played today using multilingual detection
-        print("Filtering songs played today...")
+        print("📅 Filtering songs played today...")
         today_songs = [song for song in history if is_today_song(song.get('playedAt'))]
         
         # Log unknown date values for future expansion
         unknown_values = get_unknown_date_values(history)
         if unknown_values:
-            print(f"Unknown date formats detected: {', '.join(unknown_values)}")
-            print("Please report these to the developer for future support")
+            print(f"⚠️ Unknown date formats: {', '.join(unknown_values)}")
+            print("   (Please report to developer for support)")
         
         # Log detected languages
         detected_languages = get_detected_languages(history)
         if detected_languages:
-            print(f"Detected languages in today's songs: {', '.join(detected_languages)}")
+            print(f"🌐 Languages detected: {', '.join(detected_languages)}")
 
-        print(f"Found {len(today_songs)} songs played today")
+        print(f"🎯 Found {len(today_songs)} songs played today")
 
         if len(today_songs) == 0:
-            print("No songs played today. Nothing to scrobble.")
+            print("😴 No songs played today. Nothing to scrobble.")
             return True
 
         # Get existing songs from database
@@ -236,10 +236,6 @@ class ImprovedProcess:
             FROM scrobbles
         ''').fetchall()
         
-        print(f"📊 Database Analysis:")
-        print(f"  - Total existing songs in database: {len(db_songs)}")
-        
-        # Convert to dict format for easier processing
         database_songs = []
         for row in db_songs:
             database_songs.append({
@@ -250,16 +246,7 @@ class ImprovedProcess:
                 'max_array_position': row[4] or row[3],  # Use array_position if max is NULL
                 'is_first_time': bool(row[5])
             })
-        
-        # Show recent database entries for debugging
-        if database_songs:
-            print(f"  - Recent database entries:")
-            for song in database_songs[:5]:
-                print(f"    - {song['title']} by {song['artist']} (pos: {song.get('array_position', 'N/A')}, max: {song.get('max_array_position', 'N/A')})")
 
-        # Determine if this is first time scrobbling
-        is_first_time = len(database_songs) == 0
-        
         # Clean up database: remove songs not in today's history
         if database_songs:
             songs_to_delete = []
@@ -276,7 +263,7 @@ class ImprovedProcess:
                     songs_to_delete.append(db_song)
             
             if songs_to_delete:
-                print(f"Removing {len(songs_to_delete)} songs no longer in today's history")
+                print(f"🧹 Removed {len(songs_to_delete)} outdated songs from database")
                 for song in songs_to_delete:
                     cursor.execute('''
                         DELETE FROM scrobbles 
@@ -294,27 +281,27 @@ class ImprovedProcess:
         songs_to_scrobble = [s for s in songs_to_process if s['should_scrobble']]
         total_to_scrobble = len(songs_to_scrobble)
 
-        print(f"🎵 Processing Analysis:")
-        print(f"  - Total songs to process: {len(songs_to_process)}")
-        print(f"  - Songs to scrobble: {total_to_scrobble}")
-        print(f"  - Songs for database only: {len(songs_to_process) - total_to_scrobble}")
+        # Prepare summary data
+        scrobble_stats = {
+            'new_songs': sum(1 for s in songs_to_process if s['reason'] == 'new_song'),
+            'reproductions': sum(1 for s in songs_to_process if s['reason'] == 'reproduction'),
+            'position_updates': sum(1 for s in songs_to_process if s['reason'] == 'position_update'),
+            'first_time_no_scrobble': sum(1 for s in songs_to_process if s['reason'] == 'first_time_no_scrobble')
+        }
         
-        # Log processing decisions for debugging
-        for item in songs_to_process[:10]:  # Show first 10 for brevity
-            song = item['song']
-            should_scrobble = item['should_scrobble']
-            reason = item['reason']
-            action = "SCROBBLE" if should_scrobble else "DB-ONLY"
-            print(f"    - {action}: {song['title']} by {song['artist']} ({reason})")
+        print(f"📊 PROCESSING SUMMARY:")
+        print(f"   • Songs in today's history: {len(today_songs)}")
+        print(f"   • Total to process: {len(songs_to_process)}")
+        print(f"     ◦ Songs to SCROBBLE: {total_to_scrobble}")
+        print(f"     ◦ Database updates only: {len(songs_to_process) - total_to_scrobble}")
+        print(f"   • New songs: {scrobble_stats['new_songs']}")
+        print(f"   • Re-productions: {scrobble_stats['reproductions']}")
+        print(f"   • Position updates: {scrobble_stats['position_updates']}")
         
-        if len(songs_to_process) > 10:
-            print(f"    ... and {len(songs_to_process) - 10} more songs")
-        
-        if is_first_time and total_to_scrobble > 0:
-            print(f"First-time user: Limiting scrobbles to {min(total_to_scrobble, max_first_time_songs)} most recent songs")
-
+        # Process songs
         songs_scrobbled = 0
         scrobble_position = 0
+        failed_songs = []
 
         for item in songs_to_process:
             song = item['song']
@@ -337,11 +324,9 @@ class ImprovedProcess:
                     
                     if success:
                         songs_scrobbled += 1
-                        action = "NEW" if reason == "new_song" else f"RE-SCROBBLE ({reason})" if reason == "reproduction" else "FIRST-TIME"
-                        print(f"{action}: {song['title']} by {song['artist']}")
                         scrobble_position += 1
                     else:
-                        print(f"FAILED: {song['title']} by {song['artist']} (Last.fm rejected)")
+                        failed_songs.append(f"{song['title']} by {song['artist']}")
                 
                 # Update/insert in database
                 existing_song = cursor.execute('''
@@ -373,16 +358,13 @@ class ImprovedProcess:
                 # Use the helper method to handle auth errors consistently
                 should_continue = self._handle_processing_auth_error(error)
                 if not should_continue:
-                    print(f"ERROR processing '{song['title']}' by {song['artist']}: {error}")
-                    print(f"Error type: {self.scrobbler.categorize_error(error).value}")
-                    # Continue processing other songs unless it's an auth error
+                    failed_songs.append(f"{song['title']} by {song['artist']}")
                     failure_type = self.scrobbler.categorize_error(error)
                     if failure_type == FailureType.AUTH:
-                        print("Authentication error detected. Stopping execution.")
+                        print("🔒 Authentication error detected. Stopping execution.")
                         break
 
         # Check for potential duplicates in the database
-        print(f"\\n🔍 Duplicate Detection:")
         cursor.execute('''
             SELECT track_name, artist_name, COUNT(*) as count
             FROM scrobbles
@@ -392,23 +374,17 @@ class ImprovedProcess:
         ''')
         
         duplicates = cursor.fetchall()
-        if duplicates:
-            print(f"  ⚠️  Potential duplicates found in last hour:")
-            for song, count in duplicates:
-                print(f"    - {song} (appears {count} times)")
-        else:
-            print(f"  ✅ No duplicates found in last hour")
-        
         cursor.close()
         
-        print(f"\\n✅ Scrobbling completed!")
-        print(f"📊 Summary:")
-        print(f"  - Total songs in today's history: {len(today_songs)}")
-        print(f"  - Songs successfully scrobbled: {songs_scrobbled}")
-        print(f"  - Songs processed (DB updated): {len(songs_to_process)}")
-        
-        if is_first_time:
-            print(f"  - First-time user: Limited to {max_first_time_songs} scrobbles")
+        # Final summary
+        print(f"\\n✅ SCROBBLING COMPLETED!")
+        print(f"📈 FINAL SUMMARY:")
+        print(f"   • Total songs processed: {len(songs_to_process)}")
+        print(f"   • Successfully scrobbled: {songs_scrobbled}")
+        print(f"   • Failed scrobbles: {len(failed_songs)}")
+        if failed_songs:
+            print(f"   • Failed tracks: {', '.join(failed_songs[:3])}" + ("..." if len(failed_songs) > 3 else ""))
+        print(f"   • Duplicate checks: {'✅ No duplicates' if not duplicates else f'⚠️ Found {len(duplicates)} duplicates'}")
         
         return True
 
