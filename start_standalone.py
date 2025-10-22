@@ -409,10 +409,8 @@ class ImprovedProcess:
         # Include the specific tracks information
         if scrobbled_tracks:
             print(f"\n✅ SCROBBLED TRACKS ({len(scrobbled_tracks)}):")
-            for i, track in enumerate(scrobbled_tracks[:5], 1):  # Show first 5
+            for i, track in enumerate(scrobbled_tracks, 1):  # Show ALL scrobbled tracks
                 print(f"   {i}. {track}")
-            if len(scrobbled_tracks) > 5:
-                print(f"   ... and {len(scrobbled_tracks) - 5} more")
         
         if db_only_tracks:
             print(f"\n💾 DATABASE ONLY ({len(db_only_tracks)}):")
@@ -682,16 +680,16 @@ def main():
         success = process.execute()
         
         if success:
-            print("\\n🎉 Process completed successfully!")
+            print("\n🎉 Process completed successfully!")
         else:
-            print("\\n❌ Process failed. Please check the errors above.")
+            print("\n❌ Process failed. Please check the errors above.")
             return 1
             
     except KeyboardInterrupt:
-        print("\\n⏹️  Process interrupted by user")
+        print("\n⏹️  Process interrupted by user")
         return 1
     except Exception as e:
-        print(f"\\n💥 Unexpected error: {e}")
+        print(f"\n💥 Unexpected error: {e}")
         # Exit with error code to ensure failure is detected by the GitHub workflow
         return 1
     
