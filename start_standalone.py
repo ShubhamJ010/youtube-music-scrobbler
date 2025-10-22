@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 # Import our new modules
-from ytmusic_fetcher import get_ytmusic_history_from_cookie
+from ytmusic_fetcher import get_ytmusic_history_from_cookie, YTMusicFetcher
 from date_detection import is_today_song, get_unknown_date_values, get_detected_languages
 from scrobble_utils import SmartScrobbler, PositionTracker, FailureType
 
@@ -188,6 +188,26 @@ class ImprovedProcess:
                 print(f"Failed to authenticate with Last.fm: {e}")
                 return False
 
+        # Validate the YouTube Music cookie is still valid before proceeding
+        try:
+            print("Validating YouTube Music cookie...")
+            fetcher = YTMusicFetcher(cookie)
+            is_valid = fetcher.validate_cookie_is_active()
+            if not is_valid:
+                raise Exception("YouTube Music cookie validation failed - cookie appears to be invalid")
+            print("YouTube Music cookie is valid")
+        except Exception as error:
+            failure_type = self.scrobbler.categorize_error(error)
+            
+            if failure_type == FailureType.AUTH:
+                self.handle_authentication_error(error)
+                # Re-raise the exception to ensure the execution fails as requested
+                raise error
+            else:
+                print(f"Error validating YouTube Music cookie: {error}")
+                print(f"Error type: {failure_type.value}")
+                raise error
+
         try:
             print("Fetching YouTube Music history...")
             # Use our new HTML-based history fetcher (no YTMusic API dependency)
@@ -198,11 +218,13 @@ class ImprovedProcess:
             failure_type = self.scrobbler.categorize_error(error)
             
             if failure_type == FailureType.AUTH:
-                return self.handle_authentication_error(error)
+                self.handle_authentication_error(error)
+                # Re-raise the exception to ensure the execution fails as requested
+                raise error
             else:
                 print(f"Error fetching history: {error}")
                 print(f"Error type: {failure_type.value}")
-                return False
+                raise error
 
         # Filter songs played today using multilingual detection
         print("Filtering songs played today...")
@@ -428,6 +450,7 @@ def main():
         return 1
     except Exception as e:
         print(f"\\n💥 Unexpected error: {e}")
+        # Exit with error code to ensure failure is detected by the GitHub workflow
         return 1
     
     return 0

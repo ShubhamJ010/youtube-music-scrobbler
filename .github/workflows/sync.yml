@@ -69,13 +69,15 @@ jobs:
     if: failure()
     environment: production
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
       - name: Send Discord notification
-        run: |
-          curl -H "Content-Type: application/json" -d '{
-            "content": "YouTube Music Scrobble Sync failed!"
-          }' "$DISCORD_WEBHOOK_URL"
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SCROBBLE_LOG: ${{ needs.scrobble.outputs.scrobble_log }}
+        run: |
+          pip install requests
+          python .github/scripts/send_failure_notification.py
 
   notify_success:
     needs: scrobble
