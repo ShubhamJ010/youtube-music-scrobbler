@@ -430,9 +430,9 @@ class ImprovedProcess:
         
         # Include unknown date formats in the summary
         if unknown_values:
-            print(f"\n🔍 DATE DETECTION:")
-            print(f"   Unknown formats: {', '.join(unknown_values)}")
-            print(f"   (These will be added in future updates)")
+            print(f"\n🔍 DATE SUPPORT INFO:")
+            print(f"   Unrecognized date formats: {', '.join(unknown_values)}")
+            print(f"   (These will be added to support more languages)")
         
         print(f"\n{'='*60}")
         if songs_scrobbled > 0:
