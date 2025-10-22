@@ -57,13 +57,8 @@ jobs:
           echo "$output" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           echo "YouTube Music Scrobbler finished."
-          
-      - name: Analyze database for duplicates
-        run: |
-          echo "Analyzing database for duplicate records..."
-          echo "debug_duplicates.py has been removed"
          
-  notify:
+  notify_failure:
     needs: scrobble
     runs-on: ubuntu-latest
     if: failure()
