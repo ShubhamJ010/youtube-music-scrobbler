@@ -236,6 +236,7 @@ class ImprovedProcess:
             FROM scrobbles
         ''').fetchall()
         
+        # Determine if this is first time scrobbling
         database_songs = []
         for row in db_songs:
             database_songs.append({
@@ -247,6 +248,9 @@ class ImprovedProcess:
                 'is_first_time': bool(row[5])
             })
 
+        # Determine if this is first time scrobbling
+        is_first_time = len(database_songs) == 0
+        
         # Clean up database: remove songs not in today's history
         if database_songs:
             songs_to_delete = []
