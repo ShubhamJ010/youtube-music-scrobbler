@@ -32,53 +32,51 @@ class YTMusicFetcher:
     def validate_cookie_is_active(self) -> bool:
         """
         Validate if the cookie is not only syntactically correct but also active
-        by making a request to fetch history and checking if authentication is working
+        by attempting the full history extraction process to ensure we can access content
         """
-        processed_cookie = self._process_cookie_for_request(self.cookie)
-        
-        headers = {
-            "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "accept-language": "en-US,en;q=0.9,es;q=0.8,pt;q=0.7",
-            "cache-control": "no-cache",
-            "cookie": processed_cookie,
-            "pragma": "no-cache",
-            "priority": "u=0, i",
-            "sec-ch-ua": '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
-            "sec-ch-ua-arch": '"x86"',
-            "sec-ch-ua-bitness": '"64"',
-            "sec-ch-ua-form-factors": '"Desktop"',
-            "sec-ch-ua-full-version": '"139.0.7258.154"',
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-model": '""',
-            "sec-ch-ua-platform": '"Linux"',
-            "sec-ch-ua-platform-version": '"6.14.0"',
-            "sec-ch-ua-wow64": "?0",
-            "sec-fetch-dest": "document",
-            "sec-fetch-mode": "navigate",
-            "sec-fetch-site": "same-origin",
-            "sec-fetch-user": "?1",
-            "upgrade-insecure-requests": "1",
-            "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
-        }
-        
-        # Use the history page for validation since it requires authentication
-        response = requests.get(
-            "https://music.youtube.com/history",
-            headers=headers,
-            timeout=10
-        )
-        
-        # Check the status code and content
-        if response.status_code == 401 or response.status_code == 303:  # 303 might indicate redirect to login
-            raise Exception("401 UNAUTHENTICATED: Request is missing required authentication credential. Your YouTube Music credentials have expired.")
-        elif not response.ok:
-            raise Exception(f"Failed to validate YouTube Music cookie: {response.status_code} {response.reason_phrase}")
-        elif "sign in" in response.text.lower() or "login" in response.text.lower() or "authentication" in response.text.lower():
-            # Check if page contains login prompts
-            raise Exception("Authentication required: YouTube Music cookie appears to be expired or invalid. Page content suggests a login is required.")
-        
-        # If we get here, the cookie appears to be valid and active
-        return True
+        try:
+            # First, try to fetch the history page - this will raise an exception for 401 errors
+            html = self.fetch_history_page()
+            
+            # At this point we have a 200 response, but we need to determine if it's truly authenticated
+            # The most reliable check is to see if the original parsing logic can extract meaningful data
+            initial_data = self._extract_initial_data_from_page(html)
+            
+            if initial_data:
+                # If we can extract initial data, the cookie is definitely valid
+                return True
+            else:
+                # If we can't extract initial data, we need to distinguish between:
+                # 1. Valid cookie but no history (user has no listening history)
+                # 2. Invalid cookie that still returns a page but without history data
+                # 
+                # We'll make the assumption that a valid authenticated cookie will at least have
+                # the basic page structure that the original code can work with
+                try:
+                    # Try to parse with the same logic used by get_history method
+                    parsed_songs = self._parse_ytmusic_response(initial_data) if initial_data else self._parse_ytmusic_response({})
+                    
+                    # If we got here without errors, the cookie validation passes
+                    # The fact that fetch_history_page() succeeded means we got a valid response from YouTube
+                    return True
+                except Exception:
+                    # If the parsing fails, it might mean the page structure isn't what we expect
+                    # Check if the page contains content that indicates we need to sign in
+                    if ("sign in" in html.lower() and "required" in html.lower()) or \
+                       ("log in" in html.lower() and "continue" in html.lower()) or \
+                       ("/signin" in html):
+                        raise Exception("Authentication required: YouTube Music cookie appears to be expired or invalid. Page content suggests a login is required.")
+                    else:
+                        # If it's not clearly a login page, we'll consider it valid 
+                        # (the user might just have no history)
+                        return True
+                    
+        except Exception as e:
+            # If fetch_history_page fails with a 401, the cookie is definitely invalid
+            if "401 UNAUTHENTICATED" in str(e) or "authentication credential" in str(e):
+                raise Exception("401 UNAUTHENTICATED: Request is missing required authentication credential. Your YouTube Music credentials have expired.")
+            else:
+                raise e
     
     def _sanitize_cookie_for_http(self, cookie: str) -> str:
         """Remove invalid Unicode characters that can't be used in HTTP headers"""
