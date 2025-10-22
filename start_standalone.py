@@ -195,7 +195,7 @@ class ImprovedProcess:
             is_valid = fetcher.validate_cookie_is_active()
             if not is_valid:
                 raise Exception("YouTube Music cookie validation failed - cookie appears to be invalid")
-            print("✅ Cookie validation passed")
+            print("✅ Cookie validation: PASSED")
         except Exception as error:
             return self._handle_auth_error(error, "validating cookie")
 
@@ -203,7 +203,7 @@ class ImprovedProcess:
         try:
             # Use our new HTML-based history fetcher (no YTMusic API dependency)
             history = get_ytmusic_history_from_cookie(cookie)
-            print(f"📋 Retrieved {len(history)} total songs from history")
+            print(f"📋 Retrieved: {len(history)} total songs from history")
         except Exception as error:
             return self._handle_auth_error(error, "fetching history")
 
@@ -215,14 +215,14 @@ class ImprovedProcess:
         unknown_values = get_unknown_date_values(history)
         if unknown_values:
             print(f"⚠️ Unknown date formats: {', '.join(unknown_values)}")
-            print("   (Please report to developer for support)")
+            print("   (Report to developer for support)")
         
         # Log detected languages
         detected_languages = get_detected_languages(history)
         if detected_languages:
             print(f"🌐 Languages detected: {', '.join(detected_languages)}")
 
-        print(f"🎯 Found {len(today_songs)} songs played today")
+        print(f"🎯 Found: {len(today_songs)} songs played today")
 
         if len(today_songs) == 0:
             print("😴 No songs played today. Nothing to scrobble.")
@@ -289,14 +289,15 @@ class ImprovedProcess:
             'first_time_no_scrobble': sum(1 for s in songs_to_process if s['reason'] == 'first_time_no_scrobble')
         }
         
-        print(f"📊 PROCESSING SUMMARY:")
-        print(f"   • Songs in today's history: {len(today_songs)}")
-        print(f"   • Total to process: {len(songs_to_process)}")
-        print(f"     ◦ Songs to SCROBBLE: {total_to_scrobble}")
-        print(f"     ◦ Database updates only: {len(songs_to_process) - total_to_scrobble}")
-        print(f"   • New songs: {scrobble_stats['new_songs']}")
-        print(f"   • Re-productions: {scrobble_stats['reproductions']}")
-        print(f"   • Position updates: {scrobble_stats['position_updates']}")
+        print(f"\\n📋 PROCESSING PLAN:")
+        print(f"   Songs in today's history: {len(today_songs):>3}")
+        print(f"   Total to process: {len(songs_to_process):>11}")
+        print(f"   └─ Songs to scrobble: {total_to_scrobble:>8}")
+        print(f"   └─ DB updates only: {len(songs_to_process) - total_to_scrobble:>10}")
+        print(f"\\n📊 BREAKDOWN:")
+        print(f"   New songs: {scrobble_stats['new_songs']:>16}")
+        print(f"   Re-productions: {scrobble_stats['reproductions']:>11}")
+        print(f"   Position updates: {scrobble_stats['position_updates']:>9}")
         
         # Process songs
         songs_scrobbled = 0
@@ -377,14 +378,32 @@ class ImprovedProcess:
         cursor.close()
         
         # Final summary
-        print(f"\\n✅ SCROBBLING COMPLETED!")
-        print(f"📈 FINAL SUMMARY:")
-        print(f"   • Total songs processed: {len(songs_to_process)}")
-        print(f"   • Successfully scrobbled: {songs_scrobbled}")
-        print(f"   • Failed scrobbles: {len(failed_songs)}")
+        # Final summary with better structure
+        print(f"\\n{'='*60}")
+        print(f"🎵 SCROBBLING COMPLETED!")
+        print(f"{'='*60}")
+        
+        print(f"📊 FINAL SUMMARY:")
+        print(f"   Total songs processed: {len(songs_to_process):>4}")
+        print(f"   Successfully scrobbled: {songs_scrobbled:>3}")
+        print(f"   Failed scrobbles: {len(failed_songs):>9}")
         if failed_songs:
-            print(f"   • Failed tracks: {', '.join(failed_songs[:3])}" + ("..." if len(failed_songs) > 3 else ""))
-        print(f"   • Duplicate checks: {'✅ No duplicates' if not duplicates else f'⚠️ Found {len(duplicates)} duplicates'}")
+            print(f"   Failed tracks: {', '.join(failed_songs[:3])}" + ("..." if len(failed_songs) > 3 else ""))
+        print(f"   Duplicate checks: {'✅ No duplicates' if not duplicates else f'⚠️ Found {len(duplicates)} duplicates'}")
+        
+        print(f"\\n📈 PROCESS BREAKDOWN:")
+        print(f"   New songs: {scrobble_stats['new_songs']:>16}")
+        print(f"   Re-productions: {scrobble_stats['reproductions']:>11}")
+        print(f"   Position updates: {scrobble_stats['position_updates']:>9}")
+        
+        print(f"\\n{'='*60}")
+        if songs_scrobbled > 0:
+            print(f"✅ SUCCESS: {songs_scrobbled} songs sent to Last.fm")
+        elif len(failed_songs) > 0:
+            print(f"⚠️  PARTIAL: {len(failed_songs)} songs failed to scrobble")
+        else:
+            print(f"✅ COMPLETED: All songs processed (no new scrobbles needed)")
+        print(f"{'='*60}")
         
         return True
 
