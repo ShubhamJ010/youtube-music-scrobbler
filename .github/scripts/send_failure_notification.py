@@ -21,6 +21,7 @@ def send_discord_notification():
     resolution_steps = ""
     color = 15158332  # Default red color for errors
     
+    # Check for specific error patterns in the log
     if "YouTube Music cookie validation failed" in scrobble_log or "401 UNAUTHENTICATED" in scrobble_log or "cookie appears to be expired" in scrobble_log:
         failure_reason = "❌ YouTube Music cookie is expired or invalid"
         resolution_steps = (
@@ -77,6 +78,21 @@ def send_discord_notification():
             "No action required unless this persists."
         )
         color = 16763904  # Yellow color for warnings
+    elif scrobble_log.strip() == "No log available" or "Error: Process completed with exit code 1" in scrobble_log:
+        # Special handling for minimal logs (which seems to happen in GitHub Actions)
+        failure_reason = "❌ Script execution failed - likely cookie authentication issue"
+        resolution_steps = (
+            "**Resolution:**\n"
+            "The most common cause is an expired YouTube Music cookie.\n\n"
+            "**Steps to fix:**\n"
+            "1. Sign in to YouTube Music: https://music.youtube.com\n"
+            "2. Open Developer Tools (F12)\n"
+            "3. Go to Network tab\n"
+            "4. Refresh the page and find any request to music.youtube.com\n"
+            "5. Copy the 'Cookie' header value\n"
+            "6. Update the YTMUSIC_COOKIE in your GitHub repository secrets"
+        )
+        color = 15105570  # Orange for authentication issues
     else:
         failure_reason = "⚠️ General failure occurred"
         resolution_steps = (
