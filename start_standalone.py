@@ -213,9 +213,6 @@ class ImprovedProcess:
         
         # Log unknown date values for future expansion
         unknown_values = get_unknown_date_values(history)
-        if unknown_values:
-            print(f"⚠️ Unknown date formats: {', '.join(unknown_values)}")
-            print("   (Report to developer for support)")
         
         # Log detected languages
         detected_languages = get_detected_languages(history)
@@ -387,6 +384,9 @@ class ImprovedProcess:
         print(f"🎵 SCROBBLING COMPLETED!")
         print(f"{'='*60}")
         
+        # Log unknown date values for future expansion (now in final summary)
+        unknown_values = get_unknown_date_values(history)
+        
         print(f"📊 FINAL SUMMARY:")
         print(f"   Total songs processed: {len(songs_to_process):>4}")
         print(f"   Successfully scrobbled: {songs_scrobbled:>3}")
@@ -399,6 +399,12 @@ class ImprovedProcess:
         print(f"   New songs: {scrobble_stats['new_songs']:>16}")
         print(f"   Re-productions: {scrobble_stats['reproductions']:>11}")
         print(f"   Position updates: {scrobble_stats['position_updates']:>9}")
+        
+        # Include unknown date formats in the summary
+        if unknown_values:
+            print(f"\\n🔍 DATE DETECTION:")
+            print(f"   Unknown formats: {', '.join(unknown_values)}")
+            print(f"   (These will be added in future updates)")
         
         print(f"\\n{'='*60}")
         if songs_scrobbled > 0:
