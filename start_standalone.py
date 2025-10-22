@@ -290,20 +290,22 @@ class ImprovedProcess:
             'first_time_no_scrobble': sum(1 for s in songs_to_process if s['reason'] == 'first_time_no_scrobble')
         }
         
-        print(f"\\n📋 PROCESSING PLAN:")
+        print(f"\n📋 PROCESSING PLAN:")
         print(f"   Songs in today's history: {len(today_songs):>3}")
         print(f"   Total to process: {len(songs_to_process):>11}")
         print(f"   └─ Songs to scrobble: {total_to_scrobble:>8}")
         print(f"   └─ DB updates only: {len(songs_to_process) - total_to_scrobble:>10}")
-        print(f"\\n📊 BREAKDOWN:")
+        print(f"\n📊 BREAKDOWN:")
         print(f"   New songs: {scrobble_stats['new_songs']:>16}")
         print(f"   Re-productions: {scrobble_stats['reproductions']:>11}")
         print(f"   Position updates: {scrobble_stats['position_updates']:>9}")
         
-        # Process songs
+        # Process songs with tracking for reporting
         songs_scrobbled = 0
         scrobble_position = 0
         failed_songs = []
+        scrobbled_tracks = []
+        db_only_tracks = []
 
         for item in songs_to_process:
             song = item['song']
@@ -327,6 +329,7 @@ class ImprovedProcess:
                     if success:
                         songs_scrobbled += 1
                         scrobble_position += 1
+                        scrobbled_tracks.append(f"{song['title']} by {song['artist']}")
                     else:
                         failed_songs.append(f"{song['title']} by {song['artist']}")
                 
@@ -354,6 +357,9 @@ class ImprovedProcess:
                         VALUES (?, ?, ?, ?, ?, ?)
                     ''', (song['title'], song['artist'], song['album'], position, position, is_first_time))
                 
+                if not should_scrobble:
+                    db_only_tracks.append(f"{song['title']} by {song['artist']} ({reason})")
+                
                 self.conn.commit()
                 
             except Exception as error:
@@ -380,7 +386,7 @@ class ImprovedProcess:
         
         # Final summary
         # Final summary with better structure
-        print(f"\\n{'='*60}")
+        print(f"\n{'='*60}")
         print(f"🎵 SCROBBLING COMPLETED!")
         print(f"{'='*60}")
         
@@ -395,18 +401,40 @@ class ImprovedProcess:
             print(f"   Failed tracks: {', '.join(failed_songs[:3])}" + ("..." if len(failed_songs) > 3 else ""))
         print(f"   Duplicate checks: {'✅ No duplicates' if not duplicates else f'⚠️ Found {len(duplicates)} duplicates'}")
         
-        print(f"\\n📈 PROCESS BREAKDOWN:")
+        print(f"\n📈 PROCESS BREAKDOWN:")
         print(f"   New songs: {scrobble_stats['new_songs']:>16}")
         print(f"   Re-productions: {scrobble_stats['reproductions']:>11}")
         print(f"   Position updates: {scrobble_stats['position_updates']:>9}")
         
+        # Include the specific tracks information
+        if scrobbled_tracks:
+            print(f"\n✅ SCROBBLED TRACKS ({len(scrobbled_tracks)}):")
+            for i, track in enumerate(scrobbled_tracks[:5], 1):  # Show first 5
+                print(f"   {i}. {track}")
+            if len(scrobbled_tracks) > 5:
+                print(f"   ... and {len(scrobbled_tracks) - 5} more")
+        
+        if db_only_tracks:
+            print(f"\n💾 DATABASE ONLY ({len(db_only_tracks)}):")
+            for i, track in enumerate(db_only_tracks[:5], 1):  # Show first 5
+                print(f"   {i}. {track}")
+            if len(db_only_tracks) > 5:
+                print(f"   ... and {len(db_only_tracks) - 5} more")
+        
+        if failed_songs:
+            print(f"\n❌ FAILED TRACKS ({len(failed_songs)}):")
+            for i, track in enumerate(failed_songs[:5], 1):  # Show first 5
+                print(f"   {i}. {track}")
+            if len(failed_songs) > 5:
+                print(f"   ... and {len(failed_songs) - 5} more")
+        
         # Include unknown date formats in the summary
         if unknown_values:
-            print(f"\\n🔍 DATE DETECTION:")
+            print(f"\n🔍 DATE DETECTION:")
             print(f"   Unknown formats: {', '.join(unknown_values)}")
             print(f"   (These will be added in future updates)")
         
-        print(f"\\n{'='*60}")
+        print(f"\n{'='*60}")
         if songs_scrobbled > 0:
             print(f"✅ SUCCESS: {songs_scrobbled} songs sent to Last.fm")
         elif len(failed_songs) > 0:
