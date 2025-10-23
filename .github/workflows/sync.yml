@@ -4,7 +4,7 @@ on:
   schedule:
     - cron: '*/30 * * * *' # Every 30 minutes
   push:
-    branches: [master] # Trigger on push to main branch
+    branches: [master, dev] # Trigger on push to master and dev branches
   workflow_dispatch: # Allows manual triggering from GitHub UI
 
 jobs:
@@ -57,25 +57,22 @@ jobs:
           echo "$output" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           echo "YouTube Music Scrobbler finished."
-          
-      - name: Analyze database for duplicates
-        run: |
-          echo "Analyzing database for duplicate records..."
-          echo "debug_duplicates.py has been removed"
          
-  notify:
+  notify_failure:
     needs: scrobble
     runs-on: ubuntu-latest
     if: failure()
     environment: production
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
       - name: Send Discord notification
-        run: |
-          curl -H "Content-Type: application/json" -d '{
-            "content": "YouTube Music Scrobble Sync failed!"
-          }' "$DISCORD_WEBHOOK_URL"
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SCROBBLE_LOG: ${{ needs.scrobble.outputs.scrobble_log }}
+        run: |
+          pip install requests
+          python .github/scripts/send_failure_notification.py
 
   notify_success:
     needs: scrobble
