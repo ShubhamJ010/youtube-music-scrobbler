@@ -2,14 +2,29 @@
 Multilingual date detection for YouTube Music playedAt values
 Supports 50+ languages including Latin, Cyrillic, Arabic, CJK, and Indic scripts
 """
+import re
 from typing import Dict, Set, List, Optional, NamedTuple
 
 
 class DateDetectionResult(NamedTuple):
     is_today: bool
     is_yesterday: bool
+    is_known: bool
     detected_language: Optional[str]
     original_value: str
+
+
+# Common non-today/yesterday time periods in English
+KNOWN_PERIODS = {
+    'Last week',
+    'Last month',
+}
+
+# Regex for "Month Year" in English
+MONTH_YEAR_REGEX = re.compile(
+    r'^(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}$',
+    re.IGNORECASE
+)
 
 
 # Comprehensive list of "Today" translations
@@ -164,6 +179,7 @@ def detect_date_value(played_at: Optional[str]) -> DateDetectionResult:
         return DateDetectionResult(
             is_today=False,
             is_yesterday=False,
+            is_known=False,
             detected_language=None,
             original_value=played_at or ''
         )
@@ -175,6 +191,7 @@ def detect_date_value(played_at: Optional[str]) -> DateDetectionResult:
         return DateDetectionResult(
             is_today=True,
             is_yesterday=False,
+            is_known=True,
             detected_language=TODAY_TRANSLATIONS[trimmed],
             original_value=trimmed
         )
@@ -184,7 +201,18 @@ def detect_date_value(played_at: Optional[str]) -> DateDetectionResult:
         return DateDetectionResult(
             is_today=False,
             is_yesterday=True,
+            is_known=True,
             detected_language=YESTERDAY_TRANSLATIONS[trimmed],
+            original_value=trimmed
+        )
+    
+    # Check for other known English formats
+    if trimmed in KNOWN_PERIODS or MONTH_YEAR_REGEX.match(trimmed):
+        return DateDetectionResult(
+            is_today=False,
+            is_yesterday=False,
+            is_known=True,
+            detected_language='en',
             original_value=trimmed
         )
     
@@ -192,6 +220,7 @@ def detect_date_value(played_at: Optional[str]) -> DateDetectionResult:
     return DateDetectionResult(
         is_today=False,
         is_yesterday=False,
+        is_known=False,
         detected_language=None,
         original_value=trimmed
     )
@@ -233,7 +262,7 @@ def get_unknown_date_values(songs: List[Dict[str, str]]) -> List[str]:
         played_at = song.get('playedAt')
         if played_at:
             result = detect_date_value(played_at)
-            if not result.is_today and not result.is_yesterday and played_at.strip():
+            if not result.is_known and played_at.strip():
                 unknown_values.add(played_at.strip())
     
     return list(unknown_values)
