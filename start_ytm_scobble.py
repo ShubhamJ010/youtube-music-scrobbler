@@ -128,27 +128,18 @@ class ImprovedProcess:
         print("🎵 Fetching YouTube Music history...")
         try:
             history = get_ytmusic_history()
-            print(f"📋 Retrieved: {len(history)} total songs from history")
         except FileNotFoundError as e:
             print(f"❌ {e}")
             print("Please ensure 'browser.json' or 'browser.json.enc' with YTMUSIC_AUTH_KEY is provided.")
-            print("You can create 'browser.json' by running `ytmusicapi browser` and then secure it with `encrypt_auth.py`.")
             return False
         except Exception as error:
             print(f"An error occurred while fetching history: {error}")
             return False
 
-        print("📅 Filtering songs played today...")
         today_songs = [song for song in history if is_today_song(song.get('playedAt'))]
         
-        unknown_values = get_unknown_date_values(history)
-        detected_languages = get_detected_languages(history)
-        if detected_languages:
-            print(f"🌐 Languages detected: {', '.join(detected_languages)}")
-
-        print(f"🎯 Found: {len(today_songs)} songs played today")
-
-        if len(today_songs) == 0:
+        if not today_songs:
+            print(f"📋 History: {len(history)} | Today: 0 | Existing: 0 | To Scrobble: 0")
             print("😴 No songs played today. Nothing to scrobble.")
             return True
 
@@ -165,14 +156,13 @@ class ImprovedProcess:
         
         if database_songs:
             songs_to_delete = [db_song for db_song in database_songs if not any(
-                (today_song['title'] == db_song['title'] and 
-                 today_song['artist'] == db_song['artist'] and 
+                (today_song['title'] == db_song['title'] and
+                 today_song['artist'] == db_song['artist'] and
                  today_song['album'] == db_song['album'])
                 for today_song in today_songs
             )]
-            
+
             if songs_to_delete:
-                print(f"🧹 Removed {len(songs_to_delete)} outdated songs from database")
                 for song in songs_to_delete:
                     cursor.execute('DELETE FROM scrobbles WHERE track_name = ? AND artist_name = ? AND album_name = ?', (song['title'], song['artist'], song['album']))
                 self.conn.commit()
@@ -183,35 +173,18 @@ class ImprovedProcess:
 
         songs_to_scrobble = [s for s in songs_to_process if s['should_scrobble']]
         total_to_scrobble = len(songs_to_scrobble)
+        existing_count = len(songs_to_process) - total_to_scrobble
 
-        scrobble_stats = {
-            'new_songs': sum(1 for s in songs_to_process if s['reason'] == 'new_song'),
-            'reproductions': sum(1 for s in songs_to_process if s['reason'] == 'reproduction'),
-            'position_updates': sum(1 for s in songs_to_process if s['reason'] == 'position_update'),
-            'first_time_no_scrobble': sum(1 for s in songs_to_process if s['reason'] == 'first_time_no_scrobble')
-        }
-        
-        print(f"\n📋 PROCESSING PLAN:")
-        print(f"   Songs in today's history: {len(today_songs):>3}")
-        print(f"   Total to process: {len(songs_to_process):>11}")
-        print(f"   └─ Songs to scrobble: {total_to_scrobble:>8}")
-        print(f"   └─ DB updates only: {len(songs_to_process) - total_to_scrobble:>10}")
-        print(f"\n📊 BREAKDOWN:")
-        print(f"   New songs: {scrobble_stats['new_songs']:>16}")
-        print(f"   Re-productions: {scrobble_stats['reproductions']:>11}")
-        print(f"   Position updates: {scrobble_stats['position_updates']:>9}")
-        
+        print(f"📋 History: {len(history)} | Today: {len(today_songs)} | Existing: {existing_count} | To Scrobble: {total_to_scrobble}")
+
         songs_scrobbled = 0
         scrobble_position = 0
         failed_songs = []
-        scrobbled_tracks = []
-        db_only_tracks = []
 
         for item in songs_to_process:
             song = item['song']
             position = item['position']
             should_scrobble = item['should_scrobble']
-            reason = item['reason']
             
             try:
                 if should_scrobble:
@@ -223,7 +196,6 @@ class ImprovedProcess:
                     if success:
                         songs_scrobbled += 1
                         scrobble_position += 1
-                        scrobbled_tracks.append(f"{song['title']} by {song['artist']}")
                     else:
                         failed_songs.append(f"{song['title']} by {song['artist']}")
                 
@@ -236,9 +208,6 @@ class ImprovedProcess:
                 else:
                     cursor.execute('INSERT INTO scrobbles (track_name, artist_name, album_name, array_position, max_array_position, is_first_time_scrobble) VALUES (?, ?, ?, ?, ?, ?)', (song['title'], song['artist'], song['album'], position, position, is_first_time))
                 
-                if not should_scrobble:
-                    db_only_tracks.append(f"{song['title']} by {song['artist']} ({reason})")
-                
                 self.conn.commit()
                 
             except Exception as error:
@@ -249,59 +218,33 @@ class ImprovedProcess:
                     break
                 failed_songs.append(f"{song['title']} by {song['artist']}")
 
-        duplicates = cursor.execute("SELECT track_name, artist_name, COUNT(*) FROM scrobbles WHERE scrobbled_at >= datetime('now', '-1 hour') GROUP BY track_name, artist_name HAVING COUNT(*) > 1").fetchall()
         cursor.close()
-        
-        print(f"\n{'='*60}\n🎵 SCROBBLING COMPLETED!\n{'='*60}")
-        print(f"📊 FINAL SUMMARY:")
-        print(f"   Total songs processed: {len(songs_to_process):>4}")
-        print(f"   Successfully scrobbled: {songs_scrobbled:>3}")
-        print(f"   Failed scrobbles: {len(failed_songs):>9}")
-        if failed_songs:
-            print(f"   Failed tracks: {', '.join(failed_songs[:3])}" + ("..." if len(failed_songs) > 3 else ""))
-        print(f"   Duplicate checks: {'✅ No duplicates' if not duplicates else f'⚠️ Found {len(duplicates)} duplicates'}")
-        
-        if scrobbled_tracks:
-            print(f"\n✅ SCROBBLED TRACKS ({len(scrobbled_tracks)}):")
-            for i, track in enumerate(scrobbled_tracks, 1):
-                print(f"   {i}. {track}")
 
-        if unknown_values:
-            print(f"\n🔍 DATE SUPPORT INFO:\n   Unrecognized date formats: {', '.join(unknown_values)}")
-        
-        print(f"\n{'='*60}")
-        if songs_scrobbled > 0:
-            print(f"✅ SUCCESS: {songs_scrobbled} songs sent to Last.fm")
-        elif len(failed_songs) > 0:
-            print(f"⚠️  PARTIAL: {len(failed_songs)} songs failed to scrobble")
-        else:
-            print(f"✅ COMPLETED: All songs processed (no new scrobbles needed)")
-        print(f"{ '='*60}")
-        
+        print(f"\n{'='*60}\n📊 SUMMARY: Processed: {len(songs_to_process)}, Success: {songs_scrobbled}, Failed: {len(failed_songs)}\n{'='*60}")
+
         return True
 
 def main():
     """Main entry point"""
-    print("🎵 YouTube Music Last.fm Scrobbler (ytmusicapi version)")
-    print("=" * 60)
-    
+    print("🎵 YouTube Music Last.fm Scrobbler")
+
     try:
         process = ImprovedProcess()
         success = process.execute()
-        
+
         if success:
-            print("\n🎉 Process completed successfully!")
+            print("🎉 Completed successfully!")
         else:
-            print("\n❌ Process failed. Please check the errors above.")
+            print("❌ Process failed. Please check the errors above.")
             return 1
-            
+
     except KeyboardInterrupt:
         print("\n⏹️  Process interrupted by user")
         return 1
     except Exception as e:
         print(f"\n💥 Unexpected error: {e}")
         return 1
-    
+
     return 0
 
 if __name__ == '__main__':
