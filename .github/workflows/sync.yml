@@ -47,11 +47,11 @@ jobs:
         env:
           LAST_FM_API: ${{ secrets.LAST_FM_API }}
           LAST_FM_API_SECRET: ${{ secrets.LAST_FM_API_SECRET }}
-          YTMUSIC_COOKIE: ${{ secrets.YTMUSIC_COOKIE }}
           LASTFM_SESSION: ${{ secrets.LASTFM_SESSION }}
+          YTMUSIC_AUTH_KEY: ${{ secrets.YTMUSIC_AUTH_KEY }}
         run: |
           echo "Starting YouTube Music Scrobbler..."
-          output=$(python start_standalone.py)
+          output=$(python start_ytm_scobble.py)
           echo "$output"
           echo "scrobble_log<<EOF" >> $GITHUB_OUTPUT
           echo "$output" >> $GITHUB_OUTPUT

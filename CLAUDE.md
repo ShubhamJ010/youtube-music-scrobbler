@@ -21,15 +21,10 @@ pip install -r requirements.txt
 
 ## Authentication Setup
 
-1. **YouTube Music Cookie**: The script will prompt for your YouTube Music cookie on first run, or you can set it in `.env`:
-   ```
-   YTMUSIC_COOKIE=your_complete_cookie_string_from_browser
-   ```
-   To get the cookie:
-   - Go to https://music.youtube.com in your browser
-   - Open Developer Tools (F12) → Network tab
-   - Refresh page and find any music.youtube.com request
-   - Copy the complete 'Cookie' header value
+1. **YouTube Music Auth**: The script uses an encrypted auth file:
+   - Run `ytmusicapi browser` to create `browser.json`
+   - Run `python encrypt_auth.py` to create `browser.json.enc`
+   - Set `YTMUSIC_AUTH_KEY` in `.env` with the generated key
 
 2. **Last.fm API Setup**: Create `.env` file with:
    ```
@@ -41,14 +36,8 @@ pip install -r requirements.txt
 
 ## Running the Application
 
-### Standalone Version (Recommended)
 ```bash
-python start_standalone.py
-```
-
-### Original Version (Legacy)
-```bash
-python start.py
+python start_ytm_scobble.py
 ```
 
 The standalone version includes:
@@ -90,12 +79,12 @@ CREATE TABLE scrobbles (
 
 ## Important Files
 
-- `start.py`: Main application script
-- `browser.json`: YouTube Music authentication (created by `ytmusicapi browser`)
+- `start_ytm_scobble.py`: Main application script
+- `browser.json.enc`: Encrypted YouTube Music authentication
 - `.env`: API keys and session tokens
 - `data.db`: SQLite database for tracking scrobbles
-- `environment.yml`: Conda environment specification
-- `requirements.txt`: Pip dependencies
+- `encrypt_auth.py`: Utility for encrypting browser.json
+- `ytmusic_fetcher.py`: History fetching logic
 
 ## Scrobbling Logic
 
