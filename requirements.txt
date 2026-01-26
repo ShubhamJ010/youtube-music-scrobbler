@@ -4,3 +4,4 @@ idna==3.11
 requests==2.32.5
 urllib3==2.6.3
 ytmusicapi==1.11.4
+cryptography==44.0.0

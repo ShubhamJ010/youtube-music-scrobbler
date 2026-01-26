@@ -131,8 +131,8 @@ class ImprovedProcess:
             print(f"📋 Retrieved: {len(history)} total songs from history")
         except FileNotFoundError as e:
             print(f"❌ {e}")
-            print("Please ensure 'browser.json' for YouTube Music is in the same directory.")
-            print("You can create it by running `ytmusicapi oauth` in your terminal.")
+            print("Please ensure 'browser.json' or 'browser.json.enc' with YTMUSIC_AUTH_KEY is provided.")
+            print("You can create 'browser.json' by running `ytmusicapi browser` and then secure it with `encrypt_auth.py`.")
             return False
         except Exception as error:
             print(f"An error occurred while fetching history: {error}")
