@@ -1,9 +1,11 @@
 """
 YouTube Music History Fetcher using ytmusicapi
 """
-from typing import Dict, List
-from ytmusicapi import YTMusic
 import os
+from typing import Dict, List
+
+from ytmusicapi import YTMusic
+
 
 class YTMusicFetcher:
     def __init__(self, auth_file: str = "browser.json"):
@@ -26,14 +28,8 @@ class YTMusicFetcher:
         history = self.ytmusic.get_history()
         songs = []
         for item in history:
-            # The 'artists' key can be a list of artists. We'll join them.
-            # The old implementation only returned one artist.
-            artist_name = ', '.join([artist['name'] for artist in item['artists']]) if item['artists'] else None
-
-            # The 'album' key might be missing for some tracks.
-            album_name = item['album']['name'] if item['album'] else None
-            
-            # The 'played' key is not always present
+            artist_name = ', '.join([artist['name'] for artist in item['artists']]) if item.get('artists') else None
+            album_name = item['album']['name'] if item.get('album') else None
             played_at = item.get('played')
 
             songs.append({
@@ -47,7 +43,7 @@ class YTMusicFetcher:
 def get_ytmusic_history() -> List[Dict[str, str]]:
     """
     Convenience function to get YouTube Music history.
-    
+
     Returns:
         List of songs with title, artist, album, and playedAt fields
     """
