@@ -2,7 +2,7 @@ name: YouTube Music Scrobble Sync
 
 on:
   schedule:
-    - cron: '0 */6 * * *' # Every 30 minutes
+    - cron: "*/5 * * * *" # Every 5 minutes
   push:
     branches: [master] # Trigger on push to master and dev branches
   workflow_dispatch: # Allows manual triggering from GitHub UI
@@ -13,16 +13,16 @@ jobs:
     environment: production # Binds to the 'production' environment for secrets and protection rules
     outputs:
       scrobble_log: ${{ steps.scrobbler.outputs.scrobble_log }}
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11' # Or your preferred Python version (e.g., '3.8', '3.9', '3.10')
-          
+          python-version: "3.11" # Or your preferred Python version (e.g., '3.8', '3.9', '3.10')
+
       - name: Cache dependencies
         uses: actions/cache@v3
         with:
@@ -57,7 +57,7 @@ jobs:
           echo "$output" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           echo "YouTube Music Scrobbler finished."
-         
+
   notify_failure:
     needs: scrobble
     runs-on: ubuntu-latest
