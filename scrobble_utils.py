@@ -60,8 +60,6 @@ def clean_metadata(text: str) -> str:
 
         # --- LIVE PERFORMANCES ---
         # (Live), (Live at Wembley). 
-        # Remove this if you WANT "Live" tracks to be separate from Studio versions.
-        # Most users prefer accurate "Total Plays" for the song composition.
         r'(?i)\s*[\(\[](?:.*?)?(live)(?:.*?)?[\)\]]',
         r'(?i)\s*-\s*live(?:.*?)?$',
 
@@ -93,38 +91,42 @@ class ScrobbleTimestampCalculator:
         is_first_time_scrobbling: bool = False
     ) -> str:
         """
-        Calculate timestamp for scrobbling with smart distribution
-        
-        Three-case approach:
-        1. First-time scrobbling: logarithmic distribution over 24 hours
-        2. Free user (not first time): logarithmic distribution over 1 hour
-        3. Pro user (not first time): linear distribution over 5 minutes
+        Calculate timestamp using a DYNAMIC window based on song count.
+        This prevents 'Overlap' where a new batch of songs gets pushed 
+        so far back in time that it mixes with the previous batch.
         """
         now = int(time.time())
         
+        # If only one song, place it 30 seconds ago
         if total_songs_to_scrobble == 1:
             return str(now - 30)
         
-        use_linear_distribution = False
+        # --- DYNAMIC WINDOW CALCULATION ---
+        # We assume an average of 4 minutes (240 seconds) per song.
+        estimated_listening_duration = total_songs_to_scrobble * 240
         
+        # Set boundaries:
+        # Min: 5 minutes (300s) - prevent squashing 2 songs into 1 second
+        # Max: 24 hours (86400s) - prevent crazy values if you import 1000 songs
+        distribution_seconds = max(300, estimated_listening_duration)
+        distribution_seconds = min(distribution_seconds, 86400)
+        
+        # If it's the very first run ever, we can be looser (24h) to fill history
         if is_first_time_scrobbling:
-            distribution_seconds = 24 * 60 * 60
-        elif not is_pro_user:
-            distribution_seconds = 60 * 60
-        else:
-            distribution_seconds = 5 * 60
-            use_linear_distribution = True
+            distribution_seconds = 86400
+            
+        # ----------------------------------
+
+        min_offset = 30  # Minimum 30 seconds ago
         
-        min_offset = 30
+        # Calculate position ratio (0 = most recent, 1 = oldest)
         position_ratio = songs_scrobbled_so_far / (total_songs_to_scrobble - 1)
         
-        if use_linear_distribution:
-            interval_seconds = distribution_seconds / total_songs_to_scrobble
-            offset = min_offset + (interval_seconds * songs_scrobbled_so_far)
-        else:
-            max_offset = distribution_seconds
-            log_scale = math.log(1 + position_ratio * (math.e - 1))
-            offset = min_offset + (max_offset - min_offset) * log_scale
+        # Use logarithmic distribution to keep recent songs closer to 'now'
+        # while respecting the calculated duration for older songs.
+        max_offset = distribution_seconds
+        log_scale = math.log(1 + position_ratio * (math.e - 1))
+        offset = min_offset + (max_offset - min_offset) * log_scale
         
         return str(int(now - offset))
 
@@ -134,8 +136,10 @@ class ErrorCategorizer:
     
     @staticmethod
     def categorize_error(error: Exception) -> FailureType:
+        """Categorize error type based on error message"""
         error_message = str(error)
         
+        # Authentication errors
         if any(keyword in error_message for keyword in [
             "401", "UNAUTHENTICATED", "authentication credential",
             "Headers.append", "invalid header value", "Authentication required",
@@ -143,6 +147,7 @@ class ErrorCategorizer:
         ]):
             return FailureType.AUTH
         
+        # Temporary service errors (503, 502, 429, rate limits)
         if any(keyword in error_message for keyword in [
             "503", "Service Unavailable", "502", "Bad Gateway",
             "429", "Too Many Requests", "rate limit",
@@ -150,12 +155,14 @@ class ErrorCategorizer:
         ]):
             return FailureType.TEMPORARY
         
+        # Network/YouTube Music errors
         if any(keyword in error_message for keyword in [
             "Failed to fetch", "network", "timeout",
             "ECONNRESET", "ENOTFOUND", "ConnectionError"
         ]):
             return FailureType.NETWORK
         
+        # Last.fm specific errors
         if any(keyword in error_message for keyword in [
             "audioscrobbler", "last.fm", "scrobble"
         ]):
@@ -165,13 +172,15 @@ class ErrorCategorizer:
     
     @staticmethod
     def should_deactivate_user(failure_type: FailureType, consecutive_failures: int) -> bool:
+        """Determine if user should be deactivated based on failure type and count"""
         thresholds = {
-            FailureType.AUTH: 3,
-            FailureType.NETWORK: 8,
-            FailureType.TEMPORARY: 15,
-            FailureType.LASTFM: 5,
-            FailureType.UNKNOWN: 7,
+            FailureType.AUTH: 3,      # Auth issues are persistent
+            FailureType.NETWORK: 8,   # Network issues might be temporary
+            FailureType.TEMPORARY: 15, # Temporary issues should rarely deactivate users
+            FailureType.LASTFM: 5,    # Last.fm issues might be temporary
+            FailureType.UNKNOWN: 7,   # Give more chances for unknown errors
         }
+        
         return consecutive_failures >= thresholds.get(failure_type, 7)
 
 
@@ -195,21 +204,25 @@ class SmartScrobbler:
         s = re.sub(r'\\u([0-9A-Fa-f]{4})', lambda m: chr(int(m.group(1), 16)), s)
         
         replacements = {
-            '\u2026': '...',
-            '\u2013': '-',
-            '\u2014': '-',
-            '\u2018': "'",
-            '\u2019': "'",
-            '\u201C': '"',
-            '\u201D': '"',
+            '\u2026': '...',  # ellipsis
+            '\u2013': '-',    # en dash
+            '\u2014': '-',    # em dash
+            '\u2018': "'",    # left single quotation mark
+            '\u2019': "'",    # right single quotation mark
+            '\u201C': '"',    # left double quotation mark
+            '\u201D': '"',    # right double quotation mark
         }
+        
         for old, new in replacements.items():
             s = s.replace(old, new)
         
+        # Remove control characters and invalid Unicode
         s = re.sub(r'[\u0000-\u001F\u007F\uFFFE\uFFFF]', '', s)
+        
         return s
     
     def _hash_request(self, params: Dict[str, str]) -> str:
+        """Create MD5 hash for Last.fm API request"""
         string = ""
         for key in sorted(params.keys()):
             string += key + params[key]
@@ -222,6 +235,9 @@ class SmartScrobbler:
         last_fm_session_key: str,
         timestamp: str
     ) -> bool:
+        """
+        Scrobble a single song to Last.fm
+        """
         params = {
             'album': self._sanitize_string(song['album']),
             'api_key': self.last_fm_api_key,
@@ -232,9 +248,11 @@ class SmartScrobbler:
             'sk': last_fm_session_key,
         }
         
+        # Create API signature
         api_sig = self._hash_request(params)
         
         try:
+            # Use lastpy for scrobbling
             xml_response = lastpy.scrobble(
                 params['track'],
                 params['artist'],
@@ -243,6 +261,7 @@ class SmartScrobbler:
                 timestamp
             )
 
+            # Parse XML response
             root = ET.fromstring(xml_response)
             scrobbles = root.find('scrobbles')
 
@@ -250,11 +269,13 @@ class SmartScrobbler:
                 accepted = scrobbles.get('accepted', '0')
                 ignored = scrobbles.get('ignored', '0')
 
+                # Minimal logging for scrobble result
                 if accepted != '0':
                     print(f"  ✅ Scrobbled: {params['track']} by {params['artist']}")
                 elif ignored != '0':
                     print(f"  ⚠️  Ignored: {params['track']} by {params['artist']}")
 
+                # Return True if at least one scrobble was accepted
                 return accepted != '0' or ignored == '0'
 
             print(f"  [Last.fm Response] No scrobbles element found in XML response")
@@ -262,6 +283,7 @@ class SmartScrobbler:
             return False
 
         except Exception as e:
+            # Minimal error logging
             print(f"❌ Error scrobbling '{song['title']}': {type(e).__name__}")
             raise e
     
@@ -272,18 +294,23 @@ class SmartScrobbler:
         is_pro_user: bool = False,
         is_first_time: bool = False
     ) -> str:
+        """Calculate timestamp for scrobbling at given position"""
         return self.timestamp_calculator.calculate_scrobble_timestamp(
             position, total, is_pro_user, is_first_time
         )
     
     def categorize_error(self, error: Exception) -> FailureType:
+        """Categorize an error for smart handling"""
         return self.error_categorizer.categorize_error(error)
     
     def should_deactivate_user(self, failure_type: FailureType, consecutive_failures: int) -> bool:
+        """Check if user should be deactivated"""
         return self.error_categorizer.should_deactivate_user(failure_type, consecutive_failures)
 
 
 class PositionTracker:
+    """Track song positions for detecting re-reproductions"""
+    
     def __init__(self):
         pass
     
@@ -294,9 +321,13 @@ class PositionTracker:
         is_first_time: bool = False,
         max_first_time_songs: int = 10
     ) -> List[Dict]:
+        """
+        Determine which songs should be scrobbled based on position tracking
+        """
         songs_to_scrobble = []
         
         if is_first_time:
+            # First time: scrobble recent songs up to the limit
             for i, song in enumerate(today_songs[:max_first_time_songs]):
                 songs_to_scrobble.append({
                     'song': song,
@@ -304,6 +335,8 @@ class PositionTracker:
                     'reason': 'first_time',
                     'should_scrobble': True
                 })
+            
+            # Add remaining songs to database without scrobbling
             for i, song in enumerate(today_songs[max_first_time_songs:], max_first_time_songs):
                 songs_to_scrobble.append({
                     'song': song,
@@ -312,8 +345,11 @@ class PositionTracker:
                     'should_scrobble': False
                 })
         else:
+            # Regular processing: check for new songs and re-reproductions
             for i, song in enumerate(today_songs):
                 current_position = i + 1
+                
+                # Find matching song in database
                 saved_song = None
                 for db_song in database_songs:
                     if (db_song['title'] == song['title'] and 
@@ -323,6 +359,7 @@ class PositionTracker:
                         break
                 
                 if not saved_song:
+                    # New song - scrobble it
                     songs_to_scrobble.append({
                         'song': song,
                         'position': current_position,
@@ -330,6 +367,7 @@ class PositionTracker:
                         'should_scrobble': True
                     })
                 elif current_position < saved_song.get('array_position', float('inf')):
+                    # Re-reproduction - song moved up in the list
                     songs_to_scrobble.append({
                         'song': song,
                         'position': current_position,
@@ -338,6 +376,7 @@ class PositionTracker:
                         'previous_position': saved_song.get('array_position')
                     })
                 else:
+                    # Song exists and hasn't moved up - just update position
                     songs_to_scrobble.append({
                         'song': song,
                         'position': current_position,
