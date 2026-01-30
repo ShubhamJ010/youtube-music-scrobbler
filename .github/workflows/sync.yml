@@ -4,15 +4,13 @@ on:
   schedule:
     - cron: "*/30 * * * *" # Every 30 minutes
   push:
-    branches: [master] # Trigger on push to master and dev branches
+    branches: [master] # Trigger on push to master branch
   workflow_dispatch: # Allows manual triggering from GitHub UI
 
 jobs:
   scrobble:
     runs-on: ubuntu-latest
     environment: production # Binds to the 'production' environment for secrets and protection rules
-    outputs:
-      scrobble_log: ${{ steps.scrobbler.outputs.scrobble_log }}
 
     steps:
       - name: Checkout code
@@ -21,7 +19,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11" # Or your preferred Python version (e.g., '3.8', '3.9', '3.10')
+          python-version: "3.11"
 
       - name: Cache dependencies
         uses: actions/cache@v3
@@ -30,6 +28,7 @@ jobs:
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
@@ -43,20 +42,13 @@ jobs:
             ${{ runner.os }}-scrobble-db-
 
       - name: Run YouTube Music Scrobbler
-        id: scrobbler
         env:
           LAST_FM_API: ${{ secrets.LAST_FM_API }}
           LAST_FM_API_SECRET: ${{ secrets.LAST_FM_API_SECRET }}
           LASTFM_SESSION: ${{ secrets.LASTFM_SESSION }}
           YTMUSIC_AUTH_KEY: ${{ secrets.YTMUSIC_AUTH_KEY }}
-        run: |
-          echo "Starting YouTube Music Scrobbler..."
-          output=$(python start_ytm_scobble.py)
-          echo "$output"
-          echo "scrobble_log<<EOF" >> $GITHUB_OUTPUT
-          echo "$output" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "YouTube Music Scrobbler finished."
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python start_ytm_scobble.py
 
   notify_failure:
     needs: scrobble
@@ -66,26 +58,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Send Discord notification
+
+      - name: Send Discord failure notification
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          SCROBBLE_LOG: ${{ needs.scrobble.outputs.scrobble_log }}
         run: |
           pip install requests
           python .github/scripts/send_failure_notification.py
-
-  notify_success:
-    needs: scrobble
-    runs-on: ubuntu-latest
-    if: success()
-    environment: production
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Send Discord notification
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          SCROBBLE_LOG: ${{ needs.scrobble.outputs.scrobble_log }}
-        run: |
-          pip install requests
-          python .github/scripts/send_success_notification.py
