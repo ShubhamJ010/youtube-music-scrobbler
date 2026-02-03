@@ -15,6 +15,7 @@ from date_detection import (
     get_unknown_date_values,
     is_today_song,
 )
+from notifications import send_success_notification
 from scrobble_utils import FailureType, PositionTracker, SmartScrobbler
 from ytmusic_fetcher import get_ytmusic_history
 
@@ -221,6 +222,17 @@ class ImprovedProcess:
         cursor.close()
 
         print(f"\n{'='*60}\n📊 SUMMARY: Processed: {len(songs_to_process)}, Success: {songs_scrobbled}, Failed: {len(failed_songs)}\n{'='*60}")
+
+        # Send Discord notification only if there were songs to scrobble
+        send_success_notification(
+            history_count=len(history),
+            today_count=len(today_songs),
+            existing_count=existing_count,
+            to_scrobble_count=total_to_scrobble,
+            scrobbled_count=songs_scrobbled,
+            failed_count=len(failed_songs),
+            failed_songs=failed_songs if failed_songs else None
+        )
 
         return True
 
