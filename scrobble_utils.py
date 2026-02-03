@@ -36,6 +36,10 @@ def clean_metadata(text: str) -> str:
     # 2. Define removal patterns
     # We use (?i) for case-insensitivity.
     patterns = [
+        # --- NEW: VIEW COUNTS (Specifically for your issue) ---
+        # Catches "Artist Name, 509K views" or "Artist 1M views"
+        r'(?i)(?:,?\s*)?\d+(?:[\.,]\d+)?\s*[KMB]?\s*views',
+
         # --- VIDEO GARBAGE ---
         # (Official Video), [Official Audio], (Lyrics), (Visualizer), (MV), (Music Video)
         # Also catches technical specs like [4K], [HQ], [HD]
@@ -236,8 +240,18 @@ class SmartScrobbler:
         timestamp: str
     ) -> bool:
         """
-        Scrobble a single song to Last.fm
+        Scrobble a single song to Last.fm.
+        Strictly requires Artist, Title, AND Album to prevent duplicates/bad data.
         """
+        # --- STRICT METADATA CHECK ---
+        # Filters out "Video" states or incomplete loads that cause double scrobbles.
+        # We use .get() to avoid KeyErrors if a field is missing entirely.
+        if not (song.get('artist') and song.get('title') and song.get('album')):
+            # Optional: detailed logging if you need to debug specific skipped tracks
+            # print(f"  ⏭️  Skipping: '{song.get('title', 'Unknown')}' - Missing metadata")
+            return False
+        # -----------------------------
+
         params = {
             'album': self._sanitize_string(song['album']),
             'api_key': self.last_fm_api_key,
@@ -279,7 +293,7 @@ class SmartScrobbler:
                 return accepted != '0' or ignored == '0'
 
             print(f"  [Last.fm Response] No scrobbles element found in XML response")
-            print(f"  [Raw XML] {xml_response}")
+            # print(f"  [Raw XML] {xml_response}")
             return False
 
         except Exception as e:
@@ -322,13 +336,25 @@ class PositionTracker:
         max_first_time_songs: int = 10
     ) -> List[Dict]:
         """
-        Determine which songs should be scrobbled based on position tracking
+        Determine which songs should be scrobbled based on position tracking.
+        Filters out songs with missing metadata BEFORE processing to avoid
+        index mismatches.
         """
         songs_to_scrobble = []
         
+        # --- PRE-FILTERING ---
+        # Only process songs that actually have all required metadata.
+        # We keep the original index (enumeration) because that represents 
+        # the real time/order in the history list.
+        valid_songs_with_indices = []
+        for i, song in enumerate(today_songs):
+            if song.get('artist') and song.get('title') and song.get('album'):
+                valid_songs_with_indices.append((i, song))
+        # ---------------------
+        
         if is_first_time:
-            # First time: scrobble recent songs up to the limit
-            for i, song in enumerate(today_songs[:max_first_time_songs]):
+            # First time: scrobble recent valid songs up to the limit
+            for i, song in valid_songs_with_indices[:max_first_time_songs]:
                 songs_to_scrobble.append({
                     'song': song,
                     'position': i + 1,
@@ -336,8 +362,8 @@ class PositionTracker:
                     'should_scrobble': True
                 })
             
-            # Add remaining songs to database without scrobbling
-            for i, song in enumerate(today_songs[max_first_time_songs:], max_first_time_songs):
+            # Add remaining valid songs to database without scrobbling
+            for i, song in valid_songs_with_indices[max_first_time_songs:]:
                 songs_to_scrobble.append({
                     'song': song,
                     'position': i + 1,
@@ -346,15 +372,15 @@ class PositionTracker:
                 })
         else:
             # Regular processing: check for new songs and re-reproductions
-            for i, song in enumerate(today_songs):
+            for i, song in valid_songs_with_indices:
                 current_position = i + 1
                 
                 # Find matching song in database
                 saved_song = None
                 for db_song in database_songs:
-                    if (db_song['title'] == song['title'] and 
-                        db_song['artist'] == song['artist'] and 
-                        db_song['album'] == song['album']):
+                    if (db_song.get('title') == song['title'] and 
+                        db_song.get('artist') == song['artist'] and 
+                        db_song.get('album') == song['album']):
                         saved_song = db_song
                         break
                 
