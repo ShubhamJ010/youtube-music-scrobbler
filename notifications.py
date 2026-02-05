@@ -5,6 +5,7 @@ about scrobbling results.
 """
 import os
 import requests
+from datetime import datetime, timedelta
 
 
 def send_success_notification(
@@ -14,13 +15,14 @@ def send_success_notification(
     to_scrobble_count: int,
     scrobbled_count: int,
     failed_count: int,
-    failed_songs: list = None
+    failed_songs: list = None,
+    scrobbled_songs: list = None
 ):
     """
     Send a Discord notification for successful scrobbling.
-    
-    Only sends notification if there were actual songs to scrobble (to_scrobble_count > 0).
-    
+
+    Only sends notification if there were actual successful scrobbles (scrobbled_count > 0).
+
     Args:
         history_count: Total number of songs in history
         today_count: Number of songs played today
@@ -29,60 +31,74 @@ def send_success_notification(
         scrobbled_count: Number of songs successfully scrobbled
         failed_count: Number of songs that failed to scrobble
         failed_songs: List of song names that failed (optional)
+        scrobbled_songs: List of successfully scrobbled songs (optional)
     """
     webhook_url = os.environ.get('DISCORD_WEBHOOK_URL')
     if not webhook_url:
         print("DISCORD_WEBHOOK_URL not set. Skipping notification.")
         return
 
-    # Only send notification if there were songs to scrobble
-    if to_scrobble_count == 0:
-        print("No songs to scrobble. Skipping Discord notification.")
+    # Only send notification if there were successful scrobbles
+    if scrobbled_count == 0:
+        print("No songs were successfully scrobbled. Skipping Discord notification.")
         return
 
-    # Build the log summary
-    log_lines = [
-        "🎵 YouTube Music Last.fm Scrobbler",
-        "🎵 Fetching YouTube Music history...",
-        f"📋 History: {history_count} | Today: {today_count} | Existing: {existing_count} | To Scrobble: {to_scrobble_count}",
-        "",
-        "=" * 60,
-        f"📊 SUMMARY: Processed: {today_count}, Success: {scrobbled_count}, Failed: {failed_count}",
-        "=" * 60,
-        "🎉 Completed successfully!"
-    ]
+    # Generate session time (last 30 minutes)
+    end_time = datetime.utcnow()
+    start_time = end_time - timedelta(minutes=30)
+    session_time = f"Session time: **{start_time.strftime('%Y-%m-%d %H:%M')} – {end_time.strftime('%H:%M')} UTC**"
 
-    log = "\n".join(log_lines)
+    # Determine color based on failed count
+    # AMBER (16776960) if there are failures, GREEN (3066993) if all successful
+    color = 16776960 if failed_count > 0 else 3066993
 
-    # Discord has a 2000 character limit for embed descriptions
-    if len(log) > 1980:
-        log = log[:1980] + "\n... (log truncated)"
-
-    # Add failed songs if any
+    # Build fields
     fields = []
-    if failed_songs and len(failed_songs) > 0:
-        failed_text = "\n".join([f"• {song}" for song in failed_songs[:10]])
-        if len(failed_songs) > 10:
-            failed_text += f"\n... and {len(failed_songs) - 10} more"
+
+    # History field
+    fields.append({
+        "name": "History (Last 4 Weeks)",
+        "value": f"Total tracks: **{history_count}**",
+        "inline": False
+    })
+
+    # Today field
+    today_value = f"Discovered: **{today_count}**\nScrobbled: **{scrobbled_count}**\nFailed: **{failed_count}**"
+    fields.append({
+        "name": "Today",
+        "value": today_value,
+        "inline": False
+    })
+
+    # Scrobbled This Session field
+    if scrobbled_songs and len(scrobbled_songs) > 0:
+        scrobbled_text = "\n".join([f"{i+1}. {song}" for i, song in enumerate(scrobbled_songs)])
         fields.append({
-            "name": "❌ Failed Songs",
+            "name": "Scrobbled This Session",
+            "value": scrobbled_text,
+            "inline": False
+        })
+
+    # Failure Detected field (only if there are failures)
+    if failed_songs and len(failed_songs) > 0:
+        failed_text = "Failed scrobbles:\n" + "\n".join([f"{i+1}. {song}" for i, song in enumerate(failed_songs)])
+        fields.append({
+            "name": "Failure Detected",
             "value": failed_text,
             "inline": False
         })
 
     payload = {
-        "content": "YouTube Music Scrobble Sync succeeded!",
         "embeds": [{
-            "title": "Scrobble Log",
-            "description": f"```\n{log}\n```",
-            "fields": fields if fields else None,
-            "color": 3066993  # Green color for success
+            "title": "Scrobble Report",
+            "description": session_time,
+            "fields": fields,
+            "color": color,
+            "footer": {
+                "text": "Automated scrobble sync (30-minute interval using GitHub Actions)"
+            }
         }]
     }
-
-    # Remove None values from embeds
-    if payload["embeds"][0]["fields"] is None:
-        del payload["embeds"][0]["fields"]
 
     try:
         response = requests.post(webhook_url, json=payload)
@@ -95,10 +111,10 @@ def send_success_notification(
 def send_failure_notification(error_message: str = None):
     """
     Send a Discord notification for failed scrobbling.
-    
+
     This is a simplified version that can be called from the main script
     when an exception occurs.
-    
+
     Args:
         error_message: Optional error message to include in the notification
     """

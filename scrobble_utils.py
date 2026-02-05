@@ -4,6 +4,7 @@ Based on ytmusic-scrobbler-web worker implementation
 """
 import time
 import math
+import logging
 from enum import Enum
 from typing import Dict, List, Optional
 import hashlib
@@ -136,11 +137,13 @@ class ErrorCategorizer:
 class SmartScrobbler:
     """Enhanced scrobbler with smart features"""
     
-    def __init__(self, last_fm_api_key: str, last_fm_api_secret: str):
+    def __init__(self, last_fm_api_key: str, last_fm_api_secret: str, dry_run: bool = False):
         self.last_fm_api_key = last_fm_api_key
         self.last_fm_api_secret = last_fm_api_secret
+        self.dry_run = dry_run
         self.timestamp_calculator = ScrobbleTimestampCalculator()
         self.error_categorizer = ErrorCategorizer()
+        self.logger = logging.getLogger('ytm-scrobbler.scrobbler')
     
     def _sanitize_string(self, s: str) -> str:
         """Sanitize string for Last.fm API"""
@@ -205,6 +208,10 @@ class SmartScrobbler:
         # Create API signature
         api_sig = self._hash_request(params)
         
+        if self.dry_run:
+            self.logger.info(f"[DRY RUN] Would scrobble: {song['title']} by {song['artist']}")
+            return True
+
         try:
             # Use lastpy for scrobbling (assuming it's available)
             xml_response = lastpy.scrobble(
@@ -225,20 +232,18 @@ class SmartScrobbler:
 
                 # Minimal logging for scrobble result
                 if accepted != '0':
-                    print(f"  ✅ Scrobbled: {song['title']} by {song['artist']}")
+                    self.logger.debug(f"Scrobbled: {song['title']} by {song['artist']}")
                 elif ignored != '0':
-                    print(f"  ⚠️  Ignored: {song['title']} by {song['artist']}")
+                    self.logger.warning(f"Ignored: {song['title']} by {song['artist']}")
 
                 # Return True if at least one scrobble was accepted (keeping original logic)
                 return accepted != '0' or ignored == '0'
 
-            print(f"  [Last.fm Response] No scrobbles element found in XML response")
-            print(f"  [Raw XML] {xml_response}")
+            self.logger.error(f"No scrobbles element found in XML response: {xml_response}")
             return False
 
         except Exception as e:
-            # Minimal error logging
-            print(f"❌ Error scrobbling '{song['title']}': {type(e).__name__}")
+            # Errors are handled by the caller in ImprovedProcess.execute
             raise e
     
     def calculate_timestamp(
