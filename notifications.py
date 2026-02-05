@@ -72,7 +72,13 @@ def send_success_notification(
 
     # Scrobbled This Session field
     if scrobbled_songs and len(scrobbled_songs) > 0:
-        scrobbled_text = "\n".join([f"{i+1}. {song}" for i, song in enumerate(scrobbled_songs)])
+        # Limit to first 10 songs to avoid Discord payload size limits
+        max_songs = 10
+        if len(scrobbled_songs) > max_songs:
+            scrobbled_text = "\n".join([f"{i+1}. {song}" for i, song in enumerate(scrobbled_songs[:max_songs])])
+            scrobbled_text += f"\n... and {len(scrobbled_songs) - max_songs} more"
+        else:
+            scrobbled_text = "\n".join([f"{i+1}. {song}" for i, song in enumerate(scrobbled_songs)])
         fields.append({
             "name": "Scrobbled This Session",
             "value": scrobbled_text,
