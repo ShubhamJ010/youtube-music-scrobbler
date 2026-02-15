@@ -6,8 +6,8 @@ import threading
 import time
 import webbrowser
 import xml.etree.ElementTree as ET
+import traceback
 from dotenv import set_key
-
 
 import lastpy
 from date_detection import (
@@ -135,6 +135,9 @@ class ImprovedProcess:
             return False
         except Exception as error:
             print(f"An error occurred while fetching history: {error}")
+            print("\n--- FULL ERROR TRACEBACK ---")
+            traceback.print_exc()
+            print("----------------------------\n")
             return False
 
         today_songs = [song for song in history if is_today_song(song.get('playedAt'))]
