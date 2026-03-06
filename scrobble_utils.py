@@ -247,8 +247,7 @@ class SmartScrobbler:
         # Filters out "Video" states or incomplete loads that cause double scrobbles.
         # We use .get() to avoid KeyErrors if a field is missing entirely.
         if not (song.get('artist') and song.get('title') and song.get('album')):
-            # Optional: detailed logging if you need to debug specific skipped tracks
-            # print(f"  ⏭️  Skipping: '{song.get('title', 'Unknown')}' - Missing metadata")
+            print(f"  ⏭️  Skipping: '{song.get('title', 'Unknown')}' by '{song.get('artist', 'Unknown')}' - Missing metadata (album={song.get('album')})")
             return False
         # -----------------------------
 
@@ -289,8 +288,8 @@ class SmartScrobbler:
                 elif ignored != '0':
                     print(f"  ⚠️  Ignored: {params['track']} by {params['artist']}")
 
-                # Return True if at least one scrobble was accepted
-                return accepted != '0' or ignored == '0'
+                # Return True only if at least one scrobble was accepted
+                return accepted != '0'
 
             print(f"  [Last.fm Response] No scrobbles element found in XML response")
             # print(f"  [Raw XML] {xml_response}")

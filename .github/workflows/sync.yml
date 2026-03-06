@@ -36,10 +36,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: data.db
-          key: ${{ runner.os }}-scrobble-db-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ runner.os }}-scrobble-db-${{ github.run_id }}-
-            ${{ runner.os }}-scrobble-db-
+          key: ${{ runner.os }}-scrobble-db
 
       - name: Run YouTube Music Scrobbler
         env:
