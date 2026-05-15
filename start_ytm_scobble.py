@@ -19,7 +19,8 @@ from date_detection import (
 )
 from notifications import send_success_notification
 from scrobble_utils import FailureType, PositionTracker, SmartScrobbler
-from ytmusic_fetcher import get_ytmusic_history
+from song_matching import normalize_song_key
+from ytmusic_fetcher import get_ytmusic_history, get_ytmusic_liked_song_keys
 
 
 # --- Last.fm Authentication ---
@@ -148,6 +149,7 @@ class ImprovedProcess:
         logger.info("Fetching YouTube Music history...")
         try:
             history = get_ytmusic_history()
+            liked_song_keys = get_ytmusic_liked_song_keys()
         except FileNotFoundError as e:
             logger.error(f"{e}")
             logger.error("Please ensure 'browser.json' or 'browser.json.enc' with YTMUSIC_AUTH_KEY is provided.")
@@ -201,6 +203,9 @@ class ImprovedProcess:
         scrobble_position = 0
         failed_songs = []
         scrobbled_songs = []
+        loved_count = 0
+        love_failed_count = 0
+        love_failed_songs = []
 
         for item in songs_to_process:
             song = item['song']
@@ -218,6 +223,15 @@ class ImprovedProcess:
                         songs_scrobbled += 1
                         scrobble_position += 1
                         scrobbled_songs.append(f"{song['title']} — {song['artist']}")
+
+                        song_key = normalize_song_key(song.get('title'), song.get('artist'))
+                        if song_key in liked_song_keys:
+                            loved = self.scrobbler.love_song(song, self.session)
+                            if loved:
+                                loved_count += 1
+                            else:
+                                love_failed_count += 1
+                                love_failed_songs.append(f"{song['title']} — {song['artist']}")
                     else:
                         failed_songs.append(f"{song['title']} by {song['artist']}")
                 
@@ -245,7 +259,10 @@ class ImprovedProcess:
 
         cursor.close()
 
-        logger.info(f"SUMMARY: Processed: {len(songs_to_process)}, Success: {songs_scrobbled}, Failed: {len(failed_songs)}")
+        logger.info(
+            f"SUMMARY: Processed: {len(songs_to_process)}, Success: {songs_scrobbled}, "
+            f"Failed: {len(failed_songs)}, Loved: {loved_count}, LoveFailed: {love_failed_count}"
+        )
 
         # Send Discord notification only if there were songs to scrobble
         send_success_notification(
@@ -256,7 +273,10 @@ class ImprovedProcess:
             scrobbled_count=songs_scrobbled,
             failed_count=len(failed_songs),
             failed_songs=failed_songs if failed_songs else None,
-            scrobbled_songs=scrobbled_songs if scrobbled_songs else None
+            scrobbled_songs=scrobbled_songs if scrobbled_songs else None,
+            loved_count=loved_count,
+            love_failed_count=love_failed_count,
+            love_failed_songs=love_failed_songs if love_failed_songs else None
         )
 
         return True

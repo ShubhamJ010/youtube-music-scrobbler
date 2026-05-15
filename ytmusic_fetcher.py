@@ -3,9 +3,10 @@ YouTube Music History Fetcher using ytmusicapi
 """
 import os
 import json
-from typing import Dict, List
+from typing import Dict, List, Set, Tuple
 from cryptography.fernet import Fernet
 from ytmusicapi import YTMusic
+from song_matching import normalize_song_key
 
 
 class YTMusicFetcher:
@@ -61,6 +62,26 @@ class YTMusicFetcher:
             })
         return songs
 
+    def get_liked_song_keys(self, limit: int = 5000) -> Set[Tuple[str, str]]:
+        """
+        Return normalized (title, artist) pairs from the user's liked songs.
+        """
+        liked_song_keys: Set[Tuple[str, str]] = set()
+        liked_payload = self.ytmusic.get_liked_songs(limit=limit)
+        tracks = liked_payload.get("tracks", []) if isinstance(liked_payload, dict) else []
+
+        for item in tracks:
+            title = item.get("title")
+            artists = item.get("artists") or []
+            artist_name = ", ".join([artist.get("name", "") for artist in artists if artist.get("name")]).strip()
+
+            if not title or not artist_name:
+                continue
+
+            liked_song_keys.add(normalize_song_key(title, artist_name))
+
+        return liked_song_keys
+
 def get_ytmusic_history() -> List[Dict[str, str]]:
     """
     Convenience function to get YouTube Music history.
@@ -70,3 +91,11 @@ def get_ytmusic_history() -> List[Dict[str, str]]:
     """
     fetcher = YTMusicFetcher()
     return fetcher.get_history()
+
+
+def get_ytmusic_liked_song_keys(limit: int = 5000) -> Set[Tuple[str, str]]:
+    """
+    Convenience function to get normalized liked song keys from YouTube Music.
+    """
+    fetcher = YTMusicFetcher()
+    return fetcher.get_liked_song_keys(limit=limit)

@@ -10,6 +10,7 @@ from enum import Enum
 from typing import Dict, List, Optional
 import hashlib
 import xml.etree.ElementTree as ET
+import requests
 import lastpy
 
 
@@ -305,6 +306,56 @@ class SmartScrobbler:
         except Exception as e:
             # Errors are handled by the caller in ImprovedProcess.execute
             raise e
+
+    def love_song(
+        self,
+        song: Dict[str, str],
+        last_fm_session_key: str
+    ) -> bool:
+        """Mark a song as loved on Last.fm."""
+        if not (song.get('artist') and song.get('title')):
+            return False
+
+        params = {
+            'method': 'track.love',
+            'api_key': self.last_fm_api_key,
+            'track': self._sanitize_string(song['title']),
+            'artist': self._sanitize_string(song['artist']),
+            'sk': last_fm_session_key,
+            'format': 'json',
+        }
+        params['api_sig'] = self._hash_request(params)
+
+        if self.dry_run:
+            self.logger.info(f"[DRY RUN] Would love: {song['title']} by {song['artist']}")
+            return True
+
+        try:
+            response = requests.post('https://ws.audioscrobbler.com/2.0/', data=params, timeout=20)
+            response.raise_for_status()
+            payload = response.json()
+
+            if isinstance(payload, dict) and payload.get("error"):
+                message = str(payload.get("message", "")).lower()
+                if "already loved" in message:
+                    return True
+                self.logger.warning(
+                    "Failed to love '%s' by %s: %s",
+                    song['title'],
+                    song['artist'],
+                    payload.get("message", "unknown error"),
+                )
+                return False
+
+            return True
+        except Exception as error:
+            self.logger.warning(
+                "Failed to love '%s' by %s: %s",
+                song['title'],
+                song['artist'],
+                error,
+            )
+            return False
     
     def calculate_timestamp(
         self,

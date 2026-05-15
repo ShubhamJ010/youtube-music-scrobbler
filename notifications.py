@@ -8,6 +8,21 @@ import requests
 from datetime import datetime, timedelta
 
 
+def build_sync_footer_text(
+    successful_count: int,
+    failed_count: int,
+    loved_count: int,
+    scrobbled_count: int
+) -> str:
+    """Build a compact footer summary for Discord reports."""
+    footer_parts = ["GitHub Actions sync", f"{successful_count} successful"]
+    if failed_count > 0:
+        footer_parts.append(f"{failed_count} failed")
+    footer_parts.append(f"{loved_count} loved")
+    footer_parts.append(f"{scrobbled_count} scrobbled")
+    return " • ".join(footer_parts)
+
+
 def send_success_notification(
     history_count: int,
     today_count: int,
@@ -16,7 +31,10 @@ def send_success_notification(
     scrobbled_count: int,
     failed_count: int,
     failed_songs: list = None,
-    scrobbled_songs: list = None
+    scrobbled_songs: list = None,
+    loved_count: int = 0,
+    love_failed_count: int = 0,
+    love_failed_songs: list = None
 ):
     """
     Send a Discord notification for successful scrobbling.
@@ -32,6 +50,9 @@ def send_success_notification(
         failed_count: Number of songs that failed to scrobble
         failed_songs: List of song names that failed (optional)
         scrobbled_songs: List of successfully scrobbled songs (optional)
+        loved_count: Number of successfully loved tracks on Last.fm
+        love_failed_count: Number of failed Last.fm love attempts
+        love_failed_songs: List of songs that failed to be loved (optional)
     """
     webhook_url = os.environ.get('DISCORD_WEBHOOK_URL')
     if not webhook_url:
@@ -94,6 +115,21 @@ def send_success_notification(
             "inline": False
         })
 
+    if love_failed_count > 0 and love_failed_songs:
+        love_failed_text = "Failed loves:\n" + "\n".join([f"{i+1}. {song}" for i, song in enumerate(love_failed_songs)])
+        fields.append({
+            "name": "Love Failures",
+            "value": love_failed_text,
+            "inline": False
+        })
+
+    footer_text = build_sync_footer_text(
+        successful_count=scrobbled_count,
+        failed_count=failed_count,
+        loved_count=loved_count,
+        scrobbled_count=scrobbled_count
+    )
+
     payload = {
         "embeds": [{
             "title": "Scrobble Report",
@@ -101,7 +137,7 @@ def send_success_notification(
             "fields": fields,
             "color": color,
             "footer": {
-                "text": "Automated scrobble sync (30-minute interval using GitHub Actions)"
+                "text": footer_text
             }
         }]
     }
