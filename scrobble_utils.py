@@ -322,7 +322,6 @@ class SmartScrobbler:
             'track': self._sanitize_string(song['title']),
             'artist': self._sanitize_string(song['artist']),
             'sk': last_fm_session_key,
-            'format': 'json',
         }
         params['api_sig'] = self._hash_request(params)
 
@@ -333,21 +332,24 @@ class SmartScrobbler:
         try:
             response = requests.post('https://ws.audioscrobbler.com/2.0/', data=params, timeout=20)
             response.raise_for_status()
-            payload = response.json()
+            xml_payload = response.text
+            root = ET.fromstring(xml_payload)
+            status = root.attrib.get("status", "").lower()
+            if status == "ok":
+                return True
 
-            if isinstance(payload, dict) and payload.get("error"):
-                message = str(payload.get("message", "")).lower()
-                if "already loved" in message:
-                    return True
-                self.logger.warning(
-                    "Failed to love '%s' by %s: %s",
-                    song['title'],
-                    song['artist'],
-                    payload.get("message", "unknown error"),
-                )
-                return False
+            error_node = root.find("error")
+            error_message = error_node.text if error_node is not None else "unknown error"
+            if error_message and "already loved" in error_message.lower():
+                return True
 
-            return True
+            self.logger.warning(
+                "Failed to love '%s' by %s: %s",
+                song['title'],
+                song['artist'],
+                error_message,
+            )
+            return False
         except Exception as error:
             self.logger.warning(
                 "Failed to love '%s' by %s: %s",

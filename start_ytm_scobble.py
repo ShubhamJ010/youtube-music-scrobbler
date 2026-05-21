@@ -205,6 +205,7 @@ class ImprovedProcess:
         scrobbled_songs = []
         loved_count = 0
         love_failed_count = 0
+        loved_songs = []
         love_failed_songs = []
 
         for item in songs_to_process:
@@ -229,6 +230,7 @@ class ImprovedProcess:
                             loved = self.scrobbler.love_song(song, self.session)
                             if loved:
                                 loved_count += 1
+                                loved_songs.append(f"{song['title']} — {song['artist']}")
                             else:
                                 love_failed_count += 1
                                 love_failed_songs.append(f"{song['title']} — {song['artist']}")
@@ -275,8 +277,11 @@ class ImprovedProcess:
             failed_songs=failed_songs if failed_songs else None,
             scrobbled_songs=scrobbled_songs if scrobbled_songs else None,
             loved_count=loved_count,
+            loved_songs=loved_songs if loved_songs else None,
             love_failed_count=love_failed_count,
-            love_failed_songs=love_failed_songs if love_failed_songs else None
+            love_failed_songs=love_failed_songs if love_failed_songs else None,
+            unique_artist_count=len({s.get("artist") for s in today_songs if s.get("artist")}),
+            unique_album_count=len({s.get("album") for s in today_songs if s.get("album")})
         )
 
         return True

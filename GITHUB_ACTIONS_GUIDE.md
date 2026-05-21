@@ -7,8 +7,8 @@ This guide explains how to configure and use GitHub Actions to automatically run
 Instead of running the scrobbler manually, you can use a GitHub Actions workflow to run it automatically. This automates the process of fetching your YouTube Music history and scrobbling it to Last.fm. To do this securely, we use GitHub Secrets to store your sensitive information instead of committing them to the repository.
 
 The workflow runs:
-- On a schedule (every 30 minutes)
-- On pushes to master and dev branches
+- On a schedule (once daily at 23:55 IST)
+- On pushes to the master branch
 - Manually via the GitHub Actions UI
 - With automatic cookie validation and Discord notifications
 
@@ -53,9 +53,9 @@ name: YouTube Music Scrobble Sync
 
 on:
   schedule:
-    - cron: '*/30 * * * *' # Every 30 minutes
+    - cron: '25 18 * * *' # Daily at 23:55 IST (18:25 UTC)
   push:
-    branches: [master, dev] # Trigger on push to master and dev branches
+    branches: [master] # Trigger on push to master branch
   workflow_dispatch: # Allows manual triggering from GitHub UI
 
 jobs:
@@ -144,8 +144,8 @@ jobs:
 
 ### How it Works
 
-- **`on.schedule`**: Runs every 30 minutes to catch new listening activity
-- **`on.push`**: Runs when code is pushed to master/dev branches
+- **`on.schedule`**: Runs once daily at 23:55 IST (18:25 UTC)
+- **`on.push`**: Runs when code is pushed to master branch
 - **`on.workflow_dispatch`**: Allows manual triggering
 - **Cookie validation**: The script validates your YouTube Music cookie before processing
 - **Notifications**: Discord messages sent on both success and failure
@@ -156,7 +156,7 @@ jobs:
 
 You can trigger the workflow in several ways:
 
-*   **Scheduled:** Runs every 30 minutes automatically
+*   **Scheduled:** Runs once daily at 23:55 IST (18:25 UTC)
 *   **Manual:** Click "Run workflow" button in the GitHub Actions UI
 *   **Push:** Triggered when commits are pushed to master or dev branches
 

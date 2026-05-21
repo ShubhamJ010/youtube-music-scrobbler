@@ -5,7 +5,7 @@ about scrobbling results.
 """
 import os
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
 def build_sync_footer_text(
@@ -33,8 +33,11 @@ def send_success_notification(
     failed_songs: list = None,
     scrobbled_songs: list = None,
     loved_count: int = 0,
+    loved_songs: list = None,
     love_failed_count: int = 0,
-    love_failed_songs: list = None
+    love_failed_songs: list = None,
+    unique_artist_count: int = 0,
+    unique_album_count: int = 0
 ):
     """
     Send a Discord notification for successful scrobbling.
@@ -51,8 +54,11 @@ def send_success_notification(
         failed_songs: List of song names that failed (optional)
         scrobbled_songs: List of successfully scrobbled songs (optional)
         loved_count: Number of successfully loved tracks on Last.fm
+        loved_songs: List of successfully loved tracks on Last.fm
         love_failed_count: Number of failed Last.fm love attempts
         love_failed_songs: List of songs that failed to be loved (optional)
+        unique_artist_count: Unique artists from today's songs
+        unique_album_count: Unique albums from today's songs
     """
     webhook_url = os.environ.get('DISCORD_WEBHOOK_URL')
     if not webhook_url:
@@ -64,83 +70,65 @@ def send_success_notification(
         print("No songs were successfully scrobbled. Skipping Discord notification.")
         return
 
-    # Generate session time (last 30 minutes)
-    end_time = datetime.utcnow()
-    start_time = end_time - timedelta(minutes=30)
-    session_time = f"Session time: **{start_time.strftime('%Y-%m-%d %H:%M')} – {end_time.strftime('%H:%M')} UTC**"
-
-    # Determine color based on failed count
-    # AMBER (16776960) if there are failures, GREEN (3066993) if all successful
-    color = 16776960 if failed_count > 0 else 3066993
-
-    # Build fields
-    fields = []
-
-    # History field
-    fields.append({
-        "name": "History (Last 4 Weeks)",
-        "value": f"Total tracks: **{history_count}**",
-        "inline": False
-    })
-
-    # Today field
-    today_value = f"Discovered: **{today_count}**\nScrobbled: **{scrobbled_count}**\nFailed: **{failed_count}**"
-    fields.append({
-        "name": "Today",
-        "value": today_value,
-        "inline": False
-    })
-
-    # Scrobbled This Session field
-    if scrobbled_songs and len(scrobbled_songs) > 0:
-        # Limit to first 10 songs to avoid Discord payload size limits
-        max_songs = 10
-        if len(scrobbled_songs) > max_songs:
-            scrobbled_text = "\n".join([f"{i+1}. {song}" for i, song in enumerate(scrobbled_songs[:max_songs])])
-            scrobbled_text += f"\n... and {len(scrobbled_songs) - max_songs} more"
-        else:
-            scrobbled_text = "\n".join([f"{i+1}. {song}" for i, song in enumerate(scrobbled_songs)])
-        fields.append({
-            "name": "Scrobbled This Session",
-            "value": scrobbled_text,
-            "inline": False
-        })
-
-    # Failure Detected field (only if there are failures)
-    if failed_songs and len(failed_songs) > 0:
-        failed_text = "Failed scrobbles:\n" + "\n".join([f"{i+1}. {song}" for i, song in enumerate(failed_songs)])
-        fields.append({
-            "name": "Failure Detected",
-            "value": failed_text,
-            "inline": False
-        })
-
-    if love_failed_count > 0 and love_failed_songs:
-        love_failed_text = "Failed loves:\n" + "\n".join([f"{i+1}. {song}" for i, song in enumerate(love_failed_songs)])
-        fields.append({
-            "name": "Love Failures",
-            "value": love_failed_text,
-            "inline": False
-        })
-
     footer_text = build_sync_footer_text(
         successful_count=scrobbled_count,
         failed_count=failed_count,
         loved_count=loved_count,
         scrobbled_count=scrobbled_count
     )
+    now = datetime.utcnow()
+    day = now.day
+    if day % 10 == 1 and day != 11:
+        ordinal = "st"
+    elif day % 10 == 2 and day != 12:
+        ordinal = "nd"
+    elif day % 10 == 3 and day != 13:
+        ordinal = "rd"
+    else:
+        ordinal = "th"
+    title_date = f"{day}{ordinal} {now.strftime('%b')} '{now.strftime('%y')}"
 
-    payload = {
-        "embeds": [{
-            "title": "Scrobble Report",
-            "description": session_time,
-            "fields": fields,
-            "color": color,
-            "footer": {
-                "text": footer_text
-            }
-        }]
-    }
+    estimated_minutes = scrobbled_count * 4
+    listening_hours = estimated_minutes // 60
+    listening_mins = estimated_minutes % 60
+    listening_value = f"{listening_hours}h {listening_mins}m"
+
+    liked_today_lines = []
+    if loved_songs:
+        max_items = 5
+        liked_today_lines.extend([f"- {song}" for song in loved_songs[:max_items]])
+        if len(loved_songs) > max_items:
+            liked_today_lines.append(f"- +{len(loved_songs) - max_items} more")
+    else:
+        liked_today_lines.append("- None")
+
+    highlights = []
+    highlights.append(f"- Most Played Scope — {unique_artist_count} artists")
+    highlights.append(f"- Collection Scope — {unique_album_count} albums")
+
+    body_lines = [
+        f"# Scrobble Report — {title_date}",
+        "```txt",
+        f"Scrobbled    {scrobbled_count} tracks",
+        f"Listening    {listening_value}",
+        f"Artists      {unique_artist_count}",
+        f"Albums       {unique_album_count}",
+        "```",
+        "## Liked Today",
+        *liked_today_lines,
+        "## Highlights",
+        *highlights,
+    ]
+    if love_failed_count > 0 and love_failed_songs:
+        body_lines.append("## Love Failures")
+        body_lines.extend([f"- {song}" for song in love_failed_songs[:10]])
+        if len(love_failed_songs) > 10:
+            body_lines.append(f"- +{len(love_failed_songs) - 10} more")
+
+    body_lines.append("")
+    body_lines.append(f"> {footer_text}")
+
+    payload = {"content": "\n".join(body_lines)}
 
     try:
         response = requests.post(webhook_url, json=payload)
