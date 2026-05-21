@@ -73,7 +73,8 @@ def send_success_notification(
     listening_flow_minutes: Optional[Mapping[str, int]] = None,
     most_played_artist: str = "Unknown",
     longest_streak_tracks: int = 0,
-    longest_streak_minutes: int = 0
+    longest_streak_minutes: int = 0,
+    report_now: Optional[datetime] = None
 ):
     """
     Send a Discord notification for successful scrobbling.
@@ -99,6 +100,7 @@ def send_success_notification(
         most_played_artist: Most frequently played artist today
         longest_streak_tracks: Longest contiguous streak in today's sequence
         longest_streak_minutes: Duration of longest streak in minutes
+        report_now: timezone-aware datetime to use for report date
     """
     webhook_url = os.environ.get('DISCORD_WEBHOOK_URL')
     if not webhook_url:
@@ -116,7 +118,7 @@ def send_success_notification(
         loved_count=loved_count,
         scrobbled_count=scrobbled_count
     )
-    now = datetime.now(UTC)
+    now = report_now or datetime.now(UTC)
     title_date = format_report_date(now)
 
     estimated_minutes = scrobbled_count * 4

@@ -8,6 +8,10 @@ import time
 import webbrowser
 import xml.etree.ElementTree as ET
 import logging
+from collections import Counter
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dotenv import set_key
 
 
@@ -18,15 +22,82 @@ from date_detection import (
     is_today_song,
 )
 from notifications import send_success_notification
-from report_metrics import (
-    AVG_TRACK_MINUTES,
-    compute_listening_flow,
-    compute_longest_streak,
-    compute_most_played_artist,
-)
 from scrobble_utils import FailureType, PositionTracker, SmartScrobbler
 from song_matching import normalize_song_key
 from ytmusic_fetcher import get_ytmusic_history, get_ytmusic_liked_song_keys
+
+AVG_TRACK_MINUTES = 4
+DEFAULT_SCROBBLE_TIMEZONE = "Asia/Kolkata"
+
+
+def get_scrobble_timezone() -> ZoneInfo:
+    """Resolve configured timezone with safe fallback."""
+    timezone_name = os.environ.get("SCROBBLE_TIMEZONE", DEFAULT_SCROBBLE_TIMEZONE).strip() or DEFAULT_SCROBBLE_TIMEZONE
+    try:
+        return ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        logger.warning(
+            "Invalid SCROBBLE_TIMEZONE '%s'. Falling back to %s.",
+            timezone_name,
+            DEFAULT_SCROBBLE_TIMEZONE,
+        )
+        return ZoneInfo(DEFAULT_SCROBBLE_TIMEZONE)
+
+
+def get_scrobble_now() -> datetime:
+    """Get timezone-aware now using configured scrobble timezone."""
+    return datetime.now(get_scrobble_timezone())
+
+
+def compute_most_played_artist(today_songs: List[Dict[str, str]]) -> str:
+    """Return the most frequently occurring artist in today's songs."""
+    artists = [song.get("artist") for song in today_songs if song.get("artist")]
+    if not artists:
+        return "Unknown"
+
+    counts = Counter(artists)
+    first_index = {}
+    for idx, artist in enumerate(artists):
+        if artist not in first_index:
+            first_index[artist] = idx
+    return min(counts.keys(), key=lambda artist: (-counts[artist], first_index[artist], artist))
+
+
+def compute_longest_streak(today_songs: List[Dict[str, str]], avg_track_minutes: int = AVG_TRACK_MINUTES) -> Tuple[int, int]:
+    """
+    Longest contiguous streak in today's ordered history.
+    Since history is contiguous by list order, this is today's song count.
+    """
+    tracks = len(today_songs)
+    return tracks, tracks * avg_track_minutes
+
+
+def _bucket_for_hour(hour: int) -> Optional[str]:
+    if 0 <= hour <= 5:
+        return "Late Night"
+    if 12 <= hour <= 16:
+        return "Afternoon"
+    if 17 <= hour <= 21:
+        return "Evening"
+    return None
+
+
+def compute_listening_flow(
+    song_count: int,
+    reference_time: Optional[datetime] = None,
+    avg_track_minutes: int = AVG_TRACK_MINUTES
+) -> Dict[str, int]:
+    """Approximate listening flow by backfilling synthetic play timeline from reference time."""
+    reference = reference_time or get_scrobble_now()
+    totals = {"Evening": 0, "Afternoon": 0, "Late Night": 0}
+    total_minutes = max(0, song_count * avg_track_minutes)
+
+    for minute_offset in range(total_minutes):
+        minute_ts = reference - timedelta(minutes=minute_offset)
+        bucket = _bucket_for_hour(minute_ts.hour)
+        if bucket:
+            totals[bucket] += 1
+    return totals
 
 
 # --- Last.fm Authentication ---
@@ -272,6 +343,7 @@ class ImprovedProcess:
             f"Failed: {len(failed_songs)}, Loved: {loved_count}, LoveFailed: {love_failed_count}"
         )
 
+        report_now = get_scrobble_now()
         most_played_artist = compute_most_played_artist(today_songs)
         longest_streak_tracks, longest_streak_minutes = compute_longest_streak(
             today_songs,
@@ -279,6 +351,7 @@ class ImprovedProcess:
         )
         listening_flow_minutes = compute_listening_flow(
             song_count=len(today_songs),
+            reference_time=report_now,
             avg_track_minutes=AVG_TRACK_MINUTES
         )
 
@@ -301,7 +374,8 @@ class ImprovedProcess:
             listening_flow_minutes=listening_flow_minutes,
             most_played_artist=most_played_artist,
             longest_streak_tracks=longest_streak_tracks,
-            longest_streak_minutes=longest_streak_minutes
+            longest_streak_minutes=longest_streak_minutes,
+            report_now=report_now
         )
 
         return True
