@@ -18,6 +18,12 @@ from date_detection import (
     is_today_song,
 )
 from notifications import send_success_notification
+from report_metrics import (
+    AVG_TRACK_MINUTES,
+    compute_listening_flow,
+    compute_longest_streak,
+    compute_most_played_artist,
+)
 from scrobble_utils import FailureType, PositionTracker, SmartScrobbler
 from song_matching import normalize_song_key
 from ytmusic_fetcher import get_ytmusic_history, get_ytmusic_liked_song_keys
@@ -266,6 +272,16 @@ class ImprovedProcess:
             f"Failed: {len(failed_songs)}, Loved: {loved_count}, LoveFailed: {love_failed_count}"
         )
 
+        most_played_artist = compute_most_played_artist(today_songs)
+        longest_streak_tracks, longest_streak_minutes = compute_longest_streak(
+            today_songs,
+            avg_track_minutes=AVG_TRACK_MINUTES
+        )
+        listening_flow_minutes = compute_listening_flow(
+            song_count=len(today_songs),
+            avg_track_minutes=AVG_TRACK_MINUTES
+        )
+
         # Send Discord notification only if there were songs to scrobble
         send_success_notification(
             history_count=len(history),
@@ -281,7 +297,11 @@ class ImprovedProcess:
             love_failed_count=love_failed_count,
             love_failed_songs=love_failed_songs if love_failed_songs else None,
             unique_artist_count=len({s.get("artist") for s in today_songs if s.get("artist")}),
-            unique_album_count=len({s.get("album") for s in today_songs if s.get("album")})
+            unique_album_count=len({s.get("album") for s in today_songs if s.get("album")}),
+            listening_flow_minutes=listening_flow_minutes,
+            most_played_artist=most_played_artist,
+            longest_streak_tracks=longest_streak_tracks,
+            longest_streak_minutes=longest_streak_minutes
         )
 
         return True

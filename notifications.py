@@ -5,7 +5,8 @@ about scrobbling results.
 """
 import os
 import requests
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import Mapping, Optional
 
 
 def build_sync_footer_text(
@@ -23,6 +24,37 @@ def build_sync_footer_text(
     return " • ".join(footer_parts)
 
 
+def format_report_date(now_utc: datetime) -> str:
+    """Format date as `12th May '27`."""
+    day = now_utc.day
+    if day % 10 == 1 and day != 11:
+        ordinal = "st"
+    elif day % 10 == 2 and day != 12:
+        ordinal = "nd"
+    elif day % 10 == 3 and day != 13:
+        ordinal = "rd"
+    else:
+        ordinal = "th"
+    return f"{day}{ordinal} {now_utc.strftime('%b')} '{now_utc.strftime('%y')}"
+
+
+def format_listening_duration(total_minutes: int) -> str:
+    """Format minute duration as `Xh Ym`."""
+    listening_hours = total_minutes // 60
+    listening_mins = total_minutes % 60
+    return f"{listening_hours}h {listening_mins}m"
+
+
+def extract_flow_minutes(flow: Optional[Mapping[str, int]]) -> tuple[int, int, int]:
+    """Get Evening, Afternoon, Late Night minutes with safe defaults."""
+    flow = flow or {}
+    return (
+        int(flow.get("Evening", 0)),
+        int(flow.get("Afternoon", 0)),
+        int(flow.get("Late Night", 0)),
+    )
+
+
 def send_success_notification(
     history_count: int,
     today_count: int,
@@ -37,7 +69,11 @@ def send_success_notification(
     love_failed_count: int = 0,
     love_failed_songs: list = None,
     unique_artist_count: int = 0,
-    unique_album_count: int = 0
+    unique_album_count: int = 0,
+    listening_flow_minutes: Optional[Mapping[str, int]] = None,
+    most_played_artist: str = "Unknown",
+    longest_streak_tracks: int = 0,
+    longest_streak_minutes: int = 0
 ):
     """
     Send a Discord notification for successful scrobbling.
@@ -59,6 +95,10 @@ def send_success_notification(
         love_failed_songs: List of songs that failed to be loved (optional)
         unique_artist_count: Unique artists from today's songs
         unique_album_count: Unique albums from today's songs
+        listening_flow_minutes: Approx minute distribution across dayparts
+        most_played_artist: Most frequently played artist today
+        longest_streak_tracks: Longest contiguous streak in today's sequence
+        longest_streak_minutes: Duration of longest streak in minutes
     """
     webhook_url = os.environ.get('DISCORD_WEBHOOK_URL')
     if not webhook_url:
@@ -76,22 +116,11 @@ def send_success_notification(
         loved_count=loved_count,
         scrobbled_count=scrobbled_count
     )
-    now = datetime.utcnow()
-    day = now.day
-    if day % 10 == 1 and day != 11:
-        ordinal = "st"
-    elif day % 10 == 2 and day != 12:
-        ordinal = "nd"
-    elif day % 10 == 3 and day != 13:
-        ordinal = "rd"
-    else:
-        ordinal = "th"
-    title_date = f"{day}{ordinal} {now.strftime('%b')} '{now.strftime('%y')}"
+    now = datetime.now(UTC)
+    title_date = format_report_date(now)
 
     estimated_minutes = scrobbled_count * 4
-    listening_hours = estimated_minutes // 60
-    listening_mins = estimated_minutes % 60
-    listening_value = f"{listening_hours}h {listening_mins}m"
+    listening_value = format_listening_duration(estimated_minutes)
 
     liked_today_lines = []
     if loved_songs:
@@ -102,9 +131,7 @@ def send_success_notification(
     else:
         liked_today_lines.append("- None")
 
-    highlights = []
-    highlights.append(f"- Most Played Scope — {unique_artist_count} artists")
-    highlights.append(f"- Collection Scope — {unique_album_count} albums")
+    evening_minutes, afternoon_minutes, late_night_minutes = extract_flow_minutes(listening_flow_minutes)
 
     body_lines = [
         f"# Scrobble Report — {title_date}",
@@ -116,8 +143,13 @@ def send_success_notification(
         "```",
         "## Liked Today",
         *liked_today_lines,
+        "## Listening Flow",
+        f"- Evening • {evening_minutes}m",
+        f"- Afternoon • {afternoon_minutes}m",
+        f"- Late Night • {late_night_minutes}m",
         "## Highlights",
-        *highlights,
+        f"- Longest Streak — {longest_streak_tracks} tracks • {longest_streak_minutes}m",
+        f"- Most Played — {most_played_artist}",
     ]
     if love_failed_count > 0 and love_failed_songs:
         body_lines.append("## Love Failures")
