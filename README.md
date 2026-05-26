@@ -73,6 +73,75 @@ You can run this scrobbler every 30 minutes automatically using GitHub Actions.
     - `YTMUSIC_AUTH_KEY`, `DISCORD_WEBHOOK_URL`
 3.  Commit `browser.json.enc` (but **NEVER** `browser.json`).
 
+## Alternative Scheduling Using cron-job.org
+
+GitHub Actions scheduled workflows (`cron`) on the free tier can occasionally be delayed due to shared runner load.  
+To achieve more reliable execution timing, this project can also be triggered externally using [cron-job.org](https://cron-job.org).
+
+### Setup
+
+1. Create a GitHub Personal Access Token (Fine-grained recommended)
+
+Required permissions:
+- Actions → Read and Write
+- Contents → Read
+
+2. Create a cronjob on cron-job.org
+
+### Request Configuration
+
+#### URL
+
+```text
+https://api.github.com/repos/<username>/youtube-music-scrobbler/actions/workflows/sync.yml/dispatches
+```
+
+#### Method
+
+```text
+POST
+```
+
+#### Headers
+
+```text
+Content-Type: application/json
+Accept: application/vnd.github+json
+Authorization: Bearer YOUR_GITHUB_PAT
+```
+
+#### Request Body
+
+```json
+{
+  "ref": "master"
+}
+```
+
+### Schedule
+
+For daily execution at 10:00 PM IST:
+
+```cron
+30 16 * * *
+```
+
+(GitHub API expects UTC time)
+
+### Testing
+
+Use the **Run now** option in cron-job.org to verify the workflow dispatch works correctly.
+
+You can monitor workflow executions here:
+
+```text
+https://github.com/<username>/youtube-music-scrobbler/actions
+```
+
+### Security Note
+
+Never commit or expose your GitHub Personal Access Token publicly.  
+If a token is accidentally exposed, revoke it immediately and generate a new one.
 ---
 
 ## 🛠️ Project Structure
