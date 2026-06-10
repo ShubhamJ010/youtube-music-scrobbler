@@ -304,11 +304,11 @@ class ImprovedProcess:
 
                         song_key = normalize_song_key(song.get('title'), song.get('artist'))
                         if song_key in liked_song_keys:
-                            loved = self.scrobbler.love_song(song, self.session)
-                            if loved:
+                            love_status = self.scrobbler.love_song(song, self.session)
+                            if love_status == "loved":
                                 loved_count += 1
                                 loved_songs.append(f"{song['title']} — {song['artist']}")
-                            else:
+                            elif love_status == "failed":
                                 love_failed_count += 1
                                 love_failed_songs.append(f"{song['title']} — {song['artist']}")
                     else:

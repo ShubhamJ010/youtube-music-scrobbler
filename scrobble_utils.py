@@ -311,10 +311,16 @@ class SmartScrobbler:
         self,
         song: Dict[str, str],
         last_fm_session_key: str
-    ) -> bool:
-        """Mark a song as loved on Last.fm."""
+    ) -> str:
+        """Mark a song as loved on Last.fm.
+
+        Returns:
+            "loved" if successfully loved for the first time
+            "already_loved" if the song was already loved
+            "failed" if the love attempt failed
+        """
         if not (song.get('artist') and song.get('title')):
-            return False
+            return "failed"
 
         params = {
             'method': 'track.love',
@@ -327,7 +333,7 @@ class SmartScrobbler:
 
         if self.dry_run:
             self.logger.info(f"[DRY RUN] Would love: {song['title']} by {song['artist']}")
-            return True
+            return "loved"
 
         try:
             response = requests.post('https://ws.audioscrobbler.com/2.0/', data=params, timeout=20)
@@ -336,12 +342,12 @@ class SmartScrobbler:
             root = ET.fromstring(xml_payload)
             status = root.attrib.get("status", "").lower()
             if status == "ok":
-                return True
+                return "loved"
 
             error_node = root.find("error")
             error_message = error_node.text if error_node is not None else "unknown error"
             if error_message and "already loved" in error_message.lower():
-                return True
+                return "already_loved"
 
             self.logger.warning(
                 "Failed to love '%s' by %s: %s",
@@ -349,7 +355,7 @@ class SmartScrobbler:
                 song['artist'],
                 error_message,
             )
-            return False
+            return "failed"
         except Exception as error:
             self.logger.warning(
                 "Failed to love '%s' by %s: %s",
@@ -357,7 +363,7 @@ class SmartScrobbler:
                 song['artist'],
                 error,
             )
-            return False
+            return "failed"
     
     def calculate_timestamp(
         self,
