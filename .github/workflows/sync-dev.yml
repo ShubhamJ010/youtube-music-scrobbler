@@ -1,0 +1,50 @@
+name: YouTube Music Scrobble Sync (Dev - Dry Run)
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch: # Allows manual triggering from GitHub UI
+
+jobs:
+  scrobble:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Cache scrobble database
+        uses: actions/cache@v3
+        with:
+          path: data.db
+          key: ${{ runner.os }}-scrobble-db-dev-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ runner.os }}-scrobble-db-dev-${{ github.run_id }}-
+            ${{ runner.os }}-scrobble-db-dev-
+
+      - name: Run YouTube Music Scrobbler (Dry Run)
+        env:
+          LAST_FM_API: ${{ secrets.LAST_FM_API }}
+          LAST_FM_API_SECRET: ${{ secrets.LAST_FM_API_SECRET }}
+          LASTFM_SESSION: ${{ secrets.LASTFM_SESSION }}
+          LASTFM_USERNAME: ${{ secrets.LASTFM_USERNAME }}
+          YTMUSIC_AUTH_KEY: ${{ secrets.YTMUSIC_AUTH_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python start_ytm_scobble.py --dry-run

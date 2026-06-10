@@ -55,6 +55,34 @@ def scrobble(song_name, artist_name, album_name, session_key, timestamp=str(int(
     return apiResp.text
 
 
+def get_recent_tracks(username, api_key, track=None, artist=None, limit=5):
+    """Get user's recent tracks from Last.fm.
+    
+    Args:
+        username: Last.fm username
+        api_key: Last.fm API key
+        track: Optional track name to filter by
+        artist: Optional artist name to filter by
+        limit: Number of recent tracks to return (default 5)
+    
+    Returns:
+        XML response from Last.fm API
+    """
+    params = {
+        'method': 'user.getRecentTracks',
+        'user': username,
+        'api_key': api_key,
+        'limit': limit
+    }
+    if track:
+        params['track'] = track
+    if artist:
+        params['artist'] = artist
+    
+    response = requests.get(api_head, params=params)
+    return response.text
+
+
 def hashRequest(obj, secretKey):
     string = ''
     items = list(obj.keys())

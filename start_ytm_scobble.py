@@ -145,7 +145,9 @@ class ImprovedProcess:
             self.session = os.environ['LASTFM_SESSION']
         except KeyError:
             self.session = None
-
+        
+        self.username = os.environ.get('LASTFM_USERNAME')
+        
         self.scrobbler = SmartScrobbler(self.api_key, self.api_secret, dry_run=self.dry_run)
         self.position_tracker = PositionTracker()
 
@@ -199,7 +201,11 @@ class ImprovedProcess:
         try:
             root = ET.fromstring(xml_response)
             session_key = root.find('session/key').text
+            username = root.find('session/name').text
             set_key('.env', 'LASTFM_SESSION', session_key)
+            set_key('.env', 'LASTFM_USERNAME', username)
+            logger.info(f"SESSION: Authenticated as '{username}'")
+            self.username = username
             return session_key
         except Exception as e:
             logger.error(f"Error getting session: {xml_response}")
@@ -276,6 +282,16 @@ class ImprovedProcess:
 
         logger.info(f"History: {len(history)} | Today: {len(today_songs)} | Existing: {existing_count} | To Scrobble: {total_to_scrobble}")
 
+        # Fetch all of today's scrobbles from Last.fm in a single API call
+        # This avoids rate limiting and is more efficient than per-song queries
+        today_scrobbles = []
+        if self.username:
+            logger.info(f"EXECUTE: Fetching today's external scrobbles for user '{self.username}'")
+            today_scrobbles = self.scrobbler.get_all_today_scrobbles(self.username)
+            logger.info(f"EXECUTE: Fetched {len(today_scrobbles)} external scrobbles for today")
+        else:
+            logger.info("EXECUTE: No username available, skipping external scrobble fetch")
+
         songs_scrobbled = 0
         scrobble_position = 0
         failed_songs = []
@@ -284,35 +300,78 @@ class ImprovedProcess:
         love_failed_count = 0
         loved_songs = []
         love_failed_songs = []
+        skipped_count = 0
+        skipped_songs = []
+        
+        logger.info(f"EXECUTE: Starting scrobble loop with {len(songs_to_process)} songs to process")
 
         for item in songs_to_process:
             song = item['song']
             position = item['position']
             should_scrobble = item['should_scrobble']
+            play_number = item.get('play_number', 1)
+            
+            logger.info(
+                f"PROCESSING: '{song['title']}' by {song['artist']} "
+                f"(position: {position}, play_number: {play_number}, should_scrobble: {should_scrobble})"
+            )
             
             try:
                 if should_scrobble:
                     timestamp = self.scrobbler.calculate_timestamp(
                         scrobble_position, total_to_scrobble, is_first_time=is_first_time
                     )
-                    success = self.scrobbler.scrobble_song(song, self.session, timestamp)
                     
-                    if success:
-                        songs_scrobbled += 1
-                        scrobble_position += 1
-                        scrobbled_songs.append(f"{song['title']} — {song['artist']}")
-
-                        song_key = normalize_song_key(song.get('title'), song.get('artist'))
-                        if song_key in liked_song_keys:
-                            love_status = self.scrobbler.love_song(song, self.session)
-                            if love_status == "loved":
-                                loved_count += 1
-                                loved_songs.append(f"{song['title']} — {song['artist']}")
-                            elif love_status == "failed":
-                                love_failed_count += 1
-                                love_failed_songs.append(f"{song['title']} — {song['artist']}")
+                    # Check for existing scrobble from external source
+                    logger.info(
+                        f"DUPLICATE_CHECK: Before scrobbling '{song['title']}', "
+                        f"checking if already scrobbled externally (play_number: {play_number})"
+                    )
+                    
+                    if self.scrobbler.check_existing_scrobble(
+                        song, today_scrobbles, play_number
+                    ):
+                        # Already scrobbled externally - skip
+                        skipped_count += 1
+                        skipped_songs.append(f"{song['title']} — {song['artist']}")
+                        logger.info(
+                            f"SKIPPED: '{song['title']}' by {song['artist']} "
+                            f"(play #{play_number} already scrobbled externally, total skipped: {skipped_count})"
+                        )
                     else:
-                        failed_songs.append(f"{song['title']} by {song['artist']}")
+                        # Not scrobbled externally - proceed with scrobble
+                        logger.info(
+                            f"SCROBBLING: '{song['title']}' by {song['artist']} "
+                            f"(play #{play_number} not found externally, timestamp: {timestamp})"
+                        )
+                        success = self.scrobbler.scrobble_song(song, self.session, timestamp)
+                        
+                        if success:
+                            songs_scrobbled += 1
+                            scrobble_position += 1
+                            scrobbled_songs.append(f"{song['title']} — {song['artist']}")
+                            logger.info(
+                                f"SUCCESS: '{song['title']}' by {song['artist']} "
+                                f"(total scrobbled: {songs_scrobbled})"
+                            )
+
+                            song_key = normalize_song_key(song.get('title'), song.get('artist'))
+                            if song_key in liked_song_keys:
+                                love_status = self.scrobbler.love_song(song, self.session)
+                                if love_status == "loved":
+                                    loved_count += 1
+                                    loved_songs.append(f"{song['title']} — {song['artist']}")
+                                    logger.info(f"LOVED: '{song['title']}' by {song['artist']}")
+                                elif love_status == "failed":
+                                    love_failed_count += 1
+                                    love_failed_songs.append(f"{song['title']} — {song['artist']}")
+                                    logger.warning(f"LOVE_FAILED: '{song['title']}' by {song['artist']}")
+                        else:
+                            failed_songs.append(f"{song['title']} by {song['artist']}")
+                            logger.warning(
+                                f"FAILED: '{song['title']}' by {song['artist']} "
+                                f"(total failed: {len(failed_songs)})"
+                            )
                 
                 if not self.dry_run:
                     existing_song = cursor.execute('SELECT id, max_array_position FROM scrobbles WHERE track_name = ? AND artist_name = ? AND album_name = ?', (song['title'], song['artist'], song['album'])).fetchone()
@@ -321,27 +380,35 @@ class ImprovedProcess:
                         song_id, current_max = existing_song
                         new_max = max(current_max or position, position)
                         cursor.execute('UPDATE scrobbles SET array_position = ?, max_array_position = ?, scrobbled_at = CURRENT_TIMESTAMP WHERE id = ?', (position, new_max, song_id))
+                        logger.debug(f"DATABASE: Updated '{song['title']}' (id: {song_id}, position: {position})")
                     else:
                         cursor.execute('INSERT INTO scrobbles (track_name, artist_name, album_name, array_position, max_array_position, is_first_time_scrobble) VALUES (?, ?, ?, ?, ?, ?)', (song['title'], song['artist'], song['album'], position, position, is_first_time))
+                        logger.debug(f"DATABASE: Inserted '{song['title']}' (position: {position}, is_first_time: {is_first_time})")
                     
                     self.conn.commit()
                 else:
-                    logger.debug(f"Dry run: Skipping database update for {song['title']}")
+                    logger.debug(f"DRY_RUN: Skipping database update for '{song['title']}'")
                 
             except Exception as error:
                 failure_type = self.scrobbler.categorize_error(error)
-                logger.error(f"Failed to process '{song['title']}' by {song['artist']}: {error} (Type: {failure_type.value})")
+                logger.error(
+                    f"ERROR: Failed to process '{song['title']}' by {song['artist']}: "
+                    f"{error} (Type: {failure_type.value})"
+                )
                 if failure_type == FailureType.AUTH:
                     logger.critical("Last.fm authentication error detected. Stopping execution.")
                     break
                 failed_songs.append(f"{song['title']} by {song['artist']}")
-
+        
         cursor.close()
-
+        
+        logger.info("EXECUTE: Scrobble loop completed")
         logger.info(
             f"SUMMARY: Processed: {len(songs_to_process)}, Success: {songs_scrobbled}, "
-            f"Failed: {len(failed_songs)}, Loved: {loved_count}, LoveFailed: {love_failed_count}"
+            f"Skipped: {skipped_count}, Failed: {len(failed_songs)}, "
+            f"Loved: {loved_count}, LoveFailed: {love_failed_count}"
         )
+        logger.info(f"SUMMARY: Skipped songs: {skipped_songs}")
 
         report_now = get_scrobble_now()
         most_played_artist = compute_most_played_artist(today_songs)
@@ -369,6 +436,7 @@ class ImprovedProcess:
             loved_songs=loved_songs if loved_songs else None,
             love_failed_count=love_failed_count,
             love_failed_songs=love_failed_songs if love_failed_songs else None,
+            skipped_count=skipped_count,
             unique_artist_count=len({s.get("artist") for s in today_songs if s.get("artist")}),
             unique_album_count=len({s.get("album") for s in today_songs if s.get("album")}),
             listening_flow_minutes=listening_flow_minutes,

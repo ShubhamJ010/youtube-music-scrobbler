@@ -365,6 +365,229 @@ class SmartScrobbler:
             )
             return "failed"
     
+    def get_all_today_scrobbles(self, username: str) -> List[Dict[str, str]]:
+        """
+        Fetch all scrobbles for today in a single API call.
+        
+        Uses user.getRecentTracks with from/to parameters to get all tracks
+        scrobbled today. This is more efficient than querying per-song and
+        avoids rate limiting issues.
+        
+        Args:
+            username: Last.fm username
+        
+        Returns:
+            List of dicts with 'title', 'artist', 'timestamp' keys
+        """
+        self.logger.info(f"TODAY_SCROBBLES: Starting fetch for user '{username}'")
+        
+        if not username:
+            self.logger.info("TODAY_SCROBBLES: No username provided, returning empty list")
+            return []
+        
+        try:
+            from datetime import datetime, timezone
+            
+            # Get today's date range in Unix timestamps (UTC)
+            now = datetime.now(timezone.utc)
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = now.replace(hour=23, minute=59, second=59)
+            
+            from_ts = int(today_start.timestamp())
+            to_ts = int(today_end.timestamp())
+            
+            self.logger.info(
+                f"TODAY_SCROBBLES: Querying Last.fm API "
+                f"(from: {today_start.isoformat()}, to: {today_end.isoformat()}, "
+                f"from_ts: {from_ts}, to_ts: {to_ts})"
+            )
+            
+            # Single API call with valid parameters only
+            params = {
+                'method': 'user.getRecentTracks',
+                'user': username,
+                'api_key': self.last_fm_api_key,
+                'limit': 200,  # Max allowed by API
+                'from': from_ts,
+                'to': to_ts
+            }
+            
+            response = requests.get('http://ws.audioscrobbler.com/2.0/', params=params, timeout=15)
+            response.raise_for_status()
+            
+            self.logger.info(f"TODAY_SCROBBLES: API response status: {response.status_code}")
+            
+            # Parse XML response
+            root = ET.fromstring(response.text)
+            
+            # Check for API errors
+            error_elem = root.find('error')
+            if error_elem is not None:
+                error_code = error_elem.get('code', 'unknown')
+                error_msg = error_elem.text or 'unknown error'
+                self.logger.error(
+                    f"TODAY_SCROBBLES: API error (code: {error_code}): {error_msg}"
+                )
+                return []
+            
+            # Extract tracks
+            tracks = root.findall('.//track')
+            self.logger.info(f"TODAY_SCROBBLES: Found {len(tracks)} tracks in API response")
+            
+            # Parse each track into a simple dict
+            today_scrobbles = []
+            for track in tracks:
+                # Skip currently playing track (has nowplaying="true")
+                if track.get('nowplaying') == 'true':
+                    self.logger.debug("TODAY_SCROBBLES: Skipping currently playing track")
+                    continue
+                
+                name_elem = track.find('name')
+                artist_elem = track.find('artist')
+                date_elem = track.find('date')
+                
+                if name_elem is None or artist_elem is None:
+                    self.logger.debug("TODAY_SCROBBLES: Skipping track with missing name/artist")
+                    continue
+                
+                track_title = name_elem.text if name_elem.text else ''
+                track_artist = artist_elem.text if artist_elem.text else ''
+                track_uts = date_elem.get('uts', '0') if date_elem is not None else '0'
+                
+                today_scrobbles.append({
+                    'title': track_title,
+                    'artist': track_artist,
+                    'timestamp': track_uts
+                })
+            
+            self.logger.info(f"TODAY_SCROBBLES: Parsed {len(today_scrobbles)} scrobbles for today")
+            
+            # Log summary of unique songs
+            unique_songs = set()
+            for scrobble in today_scrobbles:
+                key = (scrobble['title'].lower(), scrobble['artist'].lower())
+                unique_songs.add(key)
+            self.logger.info(f"TODAY_SCROBBLES: {len(unique_songs)} unique songs scrobbled today")
+            
+            # Log first few scrobbles for debugging
+            for i, scrobble in enumerate(today_scrobbles[:5]):
+                self.logger.info(
+                    f"TODAY_SCROBBLES: [{i+1}] '{scrobble['title']}' by {scrobble['artist']} "
+                    f"(uts: {scrobble['timestamp']})"
+                )
+            if len(today_scrobbles) > 5:
+                self.logger.info(f"TODAY_SCROBBLES: ... and {len(today_scrobbles) - 5} more")
+            
+            return today_scrobbles
+            
+        except requests.exceptions.Timeout:
+            self.logger.error("TODAY_SCROBBLES: API request timed out")
+            return []
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"TODAY_SCROBBLES: API request failed: {e}")
+            return []
+        except ET.ParseError as e:
+            self.logger.error(f"TODAY_SCROBBLES: Failed to parse XML response: {e}")
+            return []
+        except Exception as e:
+            self.logger.error(f"TODAY_SCROBBLES: Unexpected error: {e}")
+            return []
+    
+    def count_external_scrobbles(
+        self,
+        song: Dict[str, str],
+        today_scrobbles: List[Dict[str, str]]
+    ) -> int:
+        """
+        Count how many times a song appears in today's external scrobbles.
+        
+        Performs client-side filtering by matching title and artist.
+        Comparison is case-insensitive and handles whitespace.
+        
+        Args:
+            song: Song dict with 'title', 'artist'
+            today_scrobbles: Pre-fetched list from get_all_today_scrobbles()
+        
+        Returns:
+            Number of matching scrobbles (0 if none found)
+        """
+        target_title = song.get('title', '').lower().strip()
+        target_artist = song.get('artist', '').lower().strip()
+        
+        self.logger.info(
+            f"COUNT_SCROBBLES: Looking for '{target_title}' by {target_artist} "
+            f"in {len(today_scrobbles)} today's scrobbles"
+        )
+        
+        count = 0
+        for scrobble in today_scrobbles:
+            existing_title = scrobble['title'].lower().strip()
+            existing_artist = scrobble['artist'].lower().strip()
+            
+            if existing_title == target_title and existing_artist == target_artist:
+                count += 1
+                self.logger.info(
+                    f"COUNT_SCROBBLES: Match #{count} found: '{scrobble['title']}' by {scrobble['artist']} "
+                    f"(uts: {scrobble['timestamp']})"
+                )
+        
+        self.logger.info(
+            f"COUNT_SCROBBLES: Total matches for '{target_title}' by {target_artist}: {count}"
+        )
+        return count
+    
+    def check_existing_scrobble(
+        self,
+        song: Dict[str, str],
+        today_scrobbles: List[Dict[str, str]],
+        play_number: int
+    ) -> bool:
+        """
+        Check if a specific play was already scrobbled by an external source.
+        
+        Uses play-count matching: if external source scrobbled N times,
+        and this is play number M, then:
+        - If M > N: not yet captured externally → scrobble
+        - If M <= N: already captured externally → skip
+        
+        Args:
+            song: Song dict with 'title', 'artist'
+            today_scrobbles: Pre-fetched list from get_all_today_scrobbles()
+            play_number: Which occurrence this is (1st, 2nd, 3rd...)
+        
+        Returns:
+            True if already scrobbled (should skip), False otherwise
+        """
+        song_title = song.get('title', 'Unknown')
+        song_artist = song.get('artist', 'Unknown')
+        
+        self.logger.info(
+            f"DUPLICATE_CHECK: Checking play #{play_number} for '{song_title}' by {song_artist}"
+        )
+        
+        external_count = self.count_external_scrobbles(song, today_scrobbles)
+        
+        self.logger.info(
+            f"DUPLICATE_CHECK: Comparison - Play #{play_number} vs External count {external_count} "
+            f"for '{song_title}'"
+        )
+        
+        # If this play number exceeds external count, it's a new play not yet captured
+        if play_number > external_count:
+            self.logger.info(
+                f"DUPLICATE_CHECK: DECISION = SCROBBLE | "
+                f"Play #{play_number} > External count {external_count} | "
+                f"Reason: Not yet captured externally"
+            )
+            return False
+        else:
+            self.logger.info(
+                f"DUPLICATE_CHECK: DECISION = SKIP | "
+                f"Play #{play_number} <= External count {external_count} | "
+                f"Reason: Already captured externally"
+            )
+            return True
+    
     def calculate_timestamp(
         self,
         position: int,
@@ -403,7 +626,13 @@ class PositionTracker:
         Determine which songs should be scrobbled based on position tracking.
         Filters out songs with missing metadata BEFORE processing to avoid
         index mismatches.
+        
+        Also tracks play_number for each song occurrence (chronological order, oldest = 1)
+        to support duplicate detection with external scrobbling sources.
         """
+        import logging
+        logger = logging.getLogger('ytm-scrobbler.position-tracker')
+        
         songs_to_scrobble = []
         
         # --- PRE-FILTERING ---
@@ -416,28 +645,61 @@ class PositionTracker:
                 valid_songs_with_indices.append((i, song))
         # ---------------------
         
+        logger.info(f"POSITION_TRACKER: Total songs in history: {len(today_songs)}")
+        logger.info(f"POSITION_TRACKER: Valid songs with metadata: {len(valid_songs_with_indices)}")
+        
+        # --- CALCULATE CHRONOLOGICAL PLAY NUMBERS ---
+        # Iterate in reverse (oldest first) to assign play numbers
+        # Position 1 = most recent, so we iterate backwards to get chronological order
+        play_count = {}  # Key: (title, artist, album), Value: play number
+        play_numbers = {}  # Key: original index, Value: play number
+        
+        for i in range(len(valid_songs_with_indices) - 1, -1, -1):
+            idx, song = valid_songs_with_indices[i]
+            key = (song['title'].lower(), song['artist'].lower(), song['album'].lower())
+            play_count[key] = play_count.get(key, 0) + 1
+            play_numbers[idx] = play_count[key]
+        
+        logger.info(f"POSITION_TRACKER: Play count by song: {play_count}")
+        # ---------------------------------------------
+        
         if is_first_time:
+            logger.info("POSITION_TRACKER: First time run - scrobbing recent songs")
             # First time: scrobble recent valid songs up to the limit
             for i, song in valid_songs_with_indices[:max_first_time_songs]:
+                play_number = play_numbers.get(i, 1)
+                logger.info(
+                    f"POSITION_TRACKER: First time - Adding '{song['title']}' by {song['artist']} "
+                    f"(position: {i + 1}, play_number: {play_number}, reason: first_time)"
+                )
                 songs_to_scrobble.append({
                     'song': song,
                     'position': i + 1,
+                    'play_number': play_number,
                     'reason': 'first_time',
                     'should_scrobble': True
                 })
             
             # Add remaining valid songs to database without scrobbling
             for i, song in valid_songs_with_indices[max_first_time_songs:]:
+                play_number = play_numbers.get(i, 1)
+                logger.info(
+                    f"POSITION_TRACKER: First time - Skipping '{song['title']}' by {song['artist']} "
+                    f"(position: {i + 1}, play_number: {play_number}, reason: first_time_no_scrobble)"
+                )
                 songs_to_scrobble.append({
                     'song': song,
                     'position': i + 1,
+                    'play_number': play_number,
                     'reason': 'first_time_no_scrobble',
                     'should_scrobble': False
                 })
         else:
+            logger.info("POSITION_TRACKER: Regular run - checking for new songs and re-reproductions")
             # Regular processing: check for new songs and re-reproductions
             for i, song in valid_songs_with_indices:
                 current_position = i + 1
+                play_number = play_numbers.get(i, 1)
                 
                 # Find matching song in database
                 saved_song = None
@@ -450,26 +712,42 @@ class PositionTracker:
                 
                 if not saved_song:
                     # New song - scrobble it
+                    logger.info(
+                        f"POSITION_TRACKER: New song - '{song['title']}' by {song['artist']} "
+                        f"(position: {current_position}, play_number: {play_number}, reason: new_song)"
+                    )
                     songs_to_scrobble.append({
                         'song': song,
                         'position': current_position,
+                        'play_number': play_number,
                         'reason': 'new_song',
                         'should_scrobble': True
                     })
                 elif current_position < saved_song.get('array_position', float('inf')):
                     # Re-reproduction - song moved up in the list
+                    logger.info(
+                        f"POSITION_TRACKER: Re-reproduction - '{song['title']}' by {song['artist']} "
+                        f"(position: {current_position}, play_number: {play_number}, "
+                        f"previous_position: {saved_song.get('array_position')}, reason: reproduction)"
+                    )
                     songs_to_scrobble.append({
                         'song': song,
                         'position': current_position,
+                        'play_number': play_number,
                         'reason': 'reproduction',
                         'should_scrobble': True,
                         'previous_position': saved_song.get('array_position')
                     })
                 else:
                     # Song exists and hasn't moved up - just update position
+                    logger.info(
+                        f"POSITION_TRACKER: Position update - '{song['title']}' by {song['artist']} "
+                        f"(position: {current_position}, play_number: {play_number}, reason: position_update)"
+                    )
                     songs_to_scrobble.append({
                         'song': song,
                         'position': current_position,
+                        'play_number': play_number,
                         'reason': 'position_update',
                         'should_scrobble': False
                     })

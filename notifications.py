@@ -13,10 +13,13 @@ def build_sync_footer_text(
     successful_count: int,
     failed_count: int,
     loved_count: int,
-    scrobbled_count: int
+    scrobbled_count: int,
+    skipped_count: int = 0
 ) -> str:
     """Build a compact footer summary for Discord reports."""
     footer_parts = ["GitHub Actions sync", f"{successful_count} successful"]
+    if skipped_count > 0:
+        footer_parts.append(f"{skipped_count} skipped")
     if failed_count > 0:
         footer_parts.append(f"{failed_count} failed")
     footer_parts.append(f"{loved_count} loved")
@@ -68,6 +71,7 @@ def send_success_notification(
     loved_songs: list = None,
     love_failed_count: int = 0,
     love_failed_songs: list = None,
+    skipped_count: int = 0,
     unique_artist_count: int = 0,
     unique_album_count: int = 0,
     listening_flow_minutes: Optional[Mapping[str, int]] = None,
@@ -116,7 +120,8 @@ def send_success_notification(
         successful_count=scrobbled_count,
         failed_count=failed_count,
         loved_count=loved_count,
-        scrobbled_count=scrobbled_count
+        scrobbled_count=scrobbled_count,
+        skipped_count=skipped_count
     )
     now = report_now or datetime.now(UTC)
     title_date = format_report_date(now)
