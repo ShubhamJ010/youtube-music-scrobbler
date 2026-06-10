@@ -173,7 +173,17 @@ class ImprovedProcess:
             cursor.execute('ALTER TABLE scrobbles ADD COLUMN is_first_time_scrobble BOOLEAN DEFAULT FALSE')
         except sqlite3.OperationalError:
             pass
-        
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS loved_tracks (
+                id INTEGER PRIMARY KEY,
+                track_name TEXT,
+                artist_name TEXT,
+                loved_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(track_name, artist_name)
+            )
+        ''')
+
         self.conn.commit()
         cursor.close()
 
@@ -303,11 +313,20 @@ class ImprovedProcess:
                         scrobbled_songs.append(f"{song['title']} — {song['artist']}")
 
                         song_key = normalize_song_key(song.get('title'), song.get('artist'))
-                        if song_key in liked_song_keys:
+                        already_loved = cursor.execute(
+                            'SELECT 1 FROM loved_tracks WHERE track_name = ? AND artist_name = ?',
+                            (song['title'], song['artist'])
+                        ).fetchone()
+                        if song_key in liked_song_keys and not already_loved:
                             love_status = self.scrobbler.love_song(song, self.session)
                             if love_status == "loved":
                                 loved_count += 1
                                 loved_songs.append(f"{song['title']} — {song['artist']}")
+                                if not self.dry_run:
+                                    cursor.execute(
+                                        'INSERT OR IGNORE INTO loved_tracks (track_name, artist_name) VALUES (?, ?)',
+                                        (song['title'], song['artist'])
+                                    )
                             elif love_status == "failed":
                                 love_failed_count += 1
                                 love_failed_songs.append(f"{song['title']} — {song['artist']}")
