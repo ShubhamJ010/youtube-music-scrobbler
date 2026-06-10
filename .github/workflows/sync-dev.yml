@@ -4,6 +4,9 @@ on:
   push:
     branches: [dev]
   workflow_dispatch: # Allows manual triggering from GitHub UI
+  workflow_run:
+    workflows: ["YouTube Music Scrobble Sync"]
+    types: [completed]
 
 jobs:
   scrobble:
